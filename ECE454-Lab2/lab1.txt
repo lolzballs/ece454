@@ -1,0 +1,60 @@
+#############################################################################################
+utorid: XXXXXXX
+name: FIRST LAST
+email: YYYYYYYY@mail.utoronto.ca
+#############################################################################################
+Q1: List the function you think might be important to optimize to in lab2's soruce code?
+A1: Please write your answer here. 
+Multi-line answers are fine.
+Do not modify the "###" lines or the question line above your answer. 
+#############################################################################################
+Q2: Report the 6 measurements using the slowest method of compilation as a baseline, report the speedup for each of the five measurements. Eg., if gcov was the slowest, and -g was twice as fast as gcov, then the speedup for -g relative to gcov would be 2.0.
+A2: <your answer here>
+#############################################################################################
+Q3: Which is the slowest and why?
+A3: <your answer here>
+#############################################################################################
+Q4: Which is the fastest and why?
+A4: <your answer here>
+#############################################################################################
+Q5: Which of gprof and gcov is faster and why?
+A5: <your answer here>
+#############################################################################################
+Q6: Report the six measurements using the smallest method of compilation as a baseline, report the relative size increase for each of the six measurements. Eg., if -g was the smallest, and gprof was twice the size of -g, then the relative size increase for gprof relative to -g would be 2.0
+A6: <your answer here>
+#############################################################################################
+Q7: Which is the smallest and why?
+A7: <your answer here>
+#############################################################################################
+Q8: Which is the largest and why?
+A8: <your answer here>
+#############################################################################################
+Q9: Which of gprof and gcov is smaller and why?
+A9: <your answer here>
+#############################################################################################
+Q10: Report the six measurements using the slowest measurement as a baseline, also report the speedup for each version.
+A10: <your answer here>
+#############################################################################################
+Q11: Which is the slowest and why?
+A11: <your answer here>
+#############################################################################################
+Q12: Which is the fastest and why?
+A12: <your answer here>
+#############################################################################################
+Q13: Which of grof and gcov is faster and why?
+A13: <your answer here>
+#############################################################################################
+Q14: For each version, list the top 3 functions (give function name and percentage execution time)
+A14: <your answer here>
+#############################################################################################
+Q15: For the "number-one" function for -O3 (the one with the greatest percentage execution time), how does its percentage execution time compare with the percentage execution time for the same function in the -g version? How is this possible? What transformation did the compiler do and to which functions?
+A15: <your answer here>
+#############################################################################################
+Q16: Count the instructions for the function "number-one" function identified in the previous question and report the counts, as well as the reduction (reported as a ratio) in number of instructions for the -O3 version (ie., if the -O3 version has half as many instructions as the -g version, the reduction is 2.0x).
+A16: <your answer here>
+#############################################################################################
+Q17: Based only on the gcov results (ie., don’t think too much about what the code says) list the functions in the order that you would focus on optimizing them for the provided lab1 inputs and why. Identify each location by its line numbers in the original source file.
+A17: <your answer here>
+#############################################################################################
+Q18(Bonus): Name the shortest GCC compiler flag where the compiler optimization it enables requires memory alignment. How many bytes does the data needs to be aligned?
+A18: <your optional answer here>
