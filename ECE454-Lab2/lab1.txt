@@ -4,18 +4,18 @@ name: Benjamin Cheng
 email: benjamin.cheng@mail.utoronto.ca
 #############################################################################################
 Q1: List the function you think might be important to optimize to in lab2's soruce code?
-A1: Please write your answer here. 
+A1: implementation_driver_reference is a high-level function that powers all the rendering. It will be important to optimize this and the rendering functions that are called by it.
 Multi-line answers are fine.
 Do not modify the "###" lines or the question line above your answer. 
 #############################################################################################
 Q2: Report the 6 measurements using the slowest method of compilation as a baseline, report the speedup for each of the five measurements. Eg., if gcov was the slowest, and -g was twice as fast as gcov, then the speedup for -g relative to gcov would be 2.0.
-A2: 
--O3: 1.0
--O2: 1.2
--Os: 1.3
-gcov: 2.1
-gprof: 2.3
--g: 2.4
+A2: -O3: 1.0
+-O2: 1.17
+-Os: 1.27
+gcov: 1.79
+gprof: 1.84
+-g: 1.99
+
 #############################################################################################
 Q3: Which is the slowest and why?
 A3: -O3 is the slowest because -O3 has all optimizations turned on. The compiler is
@@ -32,30 +32,31 @@ A5: gprof is faster than gcov, since gprof works at the function level while gco
 source line level. There are thus many more instrumentation calls required for gcov.
 #############################################################################################
 Q6: Report the six measurements using the smallest method of compilation as a baseline, report the relative size increase for each of the six measurements. Eg., if -g was the smallest, and gprof was twice the size of -g, then the relative size increase for gprof relative to -g would be 2.0
-A6: -Os 1.0
--O3 1.1
+A6: 
+-Os 1.0
 -O2 1.1
--g 2.1
-gprof 2.1
-gcov 3.5
+-O3 1.3
+-g 2.2
+gprof 2.2
+gcov 3.6
 #############################################################################################
 Q7: Which is the smallest and why?
 A7: -Os is the smallest. This optimization preset is designed for minimizing binary size.
 #############################################################################################
 Q8: Which is the largest and why?
-A8: gcov is the largest. Each source line requires an instruction to log it.
+A8: gcov is the largest. Each source line requires extra instrumentation which manifests in a much larger binary.
 #############################################################################################
 Q9: Which of gprof and gcov is smaller and why?
 A9: gprof is smaller since there are many more source lines compared to functions. Thus there
 is less instrumentation required for gprof.
 #############################################################################################
 Q10: Report the six measurements using the slowest measurement as a baseline, also report the speedup for each version.
-A10: gcov 1.0
--g 1.1
-gprof 1.1
--Os 3.2
--O3 3.9
--O2 4.0
+A10: gcov: 1.0
+gprof: 1.1
+-g: 1.1
+-Os: 3.5
+-O3: 3.5
+-O2: 3.6
 #############################################################################################
 Q11: Which is the slowest and why?
 A11: gcov is the slowest since aside from running the program without any optimizations,
@@ -93,12 +94,13 @@ This is pretty much the inverse of what happened to processRotateCWReference, wh
 that processRotateCCWReference was likely inlined into processRotateCWReference. 
 #############################################################################################
 Q16: Count the instructions for the function "number-one" function identified in the previous question and report the counts, as well as the reduction (reported as a ratio) in number of instructions for the -O3 version (ie., if the -O3 version has half as many instructions as the -g version, the reduction is 2.0x).
-A16: -O3 had 204 instructions,
+A16: -O3 had 152 instructions,
 -g had 40 instructions.
-0.20x reduction from -g
+0.26x reduction from -g
 #############################################################################################
 Q17: Based only on the gcov results (ie., don’t think too much about what the code says) list the functions in the order that you would focus on optimizing them for the provided lab1 inputs and why. Identify each location by its line numbers in the original source file.
-A17: <your answer here>
+A17: I would focus on processRotateCWReference (implementation_reference.c:223) as it is called 2580 times, which is way more than any other function according to gcov.
+Inside processRotateCCWReference, a branch which calls processRotateCCWReference is taken 97% of the time (implementation_reference.c:227), so looking into processRotateCCWReference(implementation_reference.c:269) would be beneficial as well.
 #############################################################################################
 Q18(Bonus): Name the shortest GCC compiler flag where the compiler optimization it enables requires memory alignment. How many bytes does the data needs to be aligned?
-A18: The -O2 flag enables the -falign-functions, -falign-jumps, -falign-labels, and -falign-loops optimization flags. These flags align the start of functions, jumps, labels, and loops to a power-of-two boundary that is machine dependent. On Intel x86 this is 16 bytes.
+A18: The -fstrict-aliasing optimization allows the compiler to optimize away loading and storing instructions under strict pointer aliasing rules (see prepared example: https://godbolt.org/z/MreTeo). Under strict pointer aliasing rules, pointers (i.e. uniform, values) cannot overlap with each other if they are of different sizes. Looking at the emitted assembly with -fstrict-aliasing you can see that the loading of uniform->b is only done once, before the loop. Without strict aliasing, the compiler has to load uniform->b every iteration, since the assignment to values may be overwriting the value of uniform->b. The data needs to be aligned to the size of the aliasing pointer's data, so in this case the variables in sample must be aligned to 4-byte boundaries.
