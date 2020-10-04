@@ -1,6 +1,5 @@
 #pragma GCC target ("avx2")
 
-#include <assert.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
@@ -30,14 +29,14 @@ static inline uint8_t* align_temporary_buffer(uint8_t *frame_buffer) {
 }
 
 // src, dst mod 32 must be equal
-static void frame_copy(uint8_t *src, uint8_t *dst, register size_t size) {
+static void frame_copy(register uint8_t *src, register uint8_t *dst, register size_t size) {
     register size_t offset = 0;
 
-    assert((size_t) src % 32 == (size_t) dst % 32);
+    // assert((size_t) src % 32 == (size_t) dst % 32);
 
     // Copy byte by byte up until the 32-byte alignment
-    uint8_t *src_bytes = (uint8_t*) (src);
-    uint8_t *dst_bytes = (uint8_t*) (dst);
+    register uint8_t *src_bytes = (uint8_t*) (src);
+    register uint8_t *dst_bytes = (uint8_t*) (dst);
     while ((size_t) src_bytes % 32 != 0) {
         *dst_bytes = *src_bytes;
 
@@ -61,8 +60,8 @@ static void frame_copy(uint8_t *src, uint8_t *dst, register size_t size) {
     offset -= sizeof(__m256i);
     
     // Copy as many dwords as possible
-    uint32_t *src_dwords = (uint32_t*) (src + offset);
-    uint32_t *dst_dwords = (uint32_t*) (dst + offset);
+    register uint32_t *src_dwords = (uint32_t*) (src + offset);
+    register uint32_t *dst_dwords = (uint32_t*) (dst + offset);
     offset += sizeof(uint32_t);
     while (offset <= size) { // equality occurs when there are exactly 4 bytes left to copy
         *dst_dwords = *src_dwords;
@@ -84,13 +83,13 @@ static void frame_copy(uint8_t *src, uint8_t *dst, register size_t size) {
         dst_bytes += 1;
     }
 
-    assert(offset == size);
+    // assert(offset == size);
 }
 
-static void frame_clear(uint8_t *dst, register size_t size) {
+static void frame_clear(register uint8_t *dst, register size_t size) {
     register size_t offset;
 
-    __m256i *dst_vect = (__m256i*) dst;
+    register __m256i *dst_vect = (__m256i*) dst;
     __m256i val_vect = _mm256_set1_epi64x(0xFFFFFFFFFFFFFFFF);
     offset = sizeof(__m256i);
     while (offset <= size) {
@@ -101,8 +100,8 @@ static void frame_clear(uint8_t *dst, register size_t size) {
     }
     offset -= sizeof(__m256i);
 
-    uint32_t *dst_dwords = (uint32_t*) (dst + offset);
-    uint32_t val_dword = 0xFFFFFFFF;
+    register uint32_t *dst_dwords = (uint32_t*) (dst + offset);
+    register uint32_t val_dword = 0xFFFFFFFF;
     offset += sizeof(uint32_t);
     while (offset <= size) {
         *dst_dwords = val_dword;
@@ -112,7 +111,7 @@ static void frame_clear(uint8_t *dst, register size_t size) {
     }
     offset -= sizeof(uint32_t);
 
-    uint8_t *dst_bytes = (uint8_t*) (dst + offset);
+    register uint8_t *dst_bytes = (uint8_t*) (dst + offset);
     while (offset < size) {
         *dst_bytes = 0xFF;
 
@@ -120,7 +119,7 @@ static void frame_clear(uint8_t *dst, register size_t size) {
         dst_bytes += 1;
     }
 
-    assert(offset == size);
+    // assert(offset == size);
 }
 
 /***********************************************************************************************************************
@@ -195,12 +194,7 @@ unsigned char *processMoveRight(unsigned char *buffer_frame, unsigned width, uns
 
     // fill left over pixels with white pixels
     for (int row = 0; row < height; row++) {
-        for (int column = 0; column < offset; column++) {
-            int position_rendered_frame = row * width * 3 + column * 3;
-            render_buffer[position_rendered_frame] = 255;
-            render_buffer[position_rendered_frame + 1] = 255;
-            render_buffer[position_rendered_frame + 2] = 255;
-        }
+        frame_clear(render_buffer + row * width * 3, offset * 3);
     }
 
     // copy the temporary buffer back to original frame buffer
@@ -265,11 +259,14 @@ unsigned char *processMoveLeft(unsigned char *buffer_frame, unsigned width, unsi
 
     uint8_t *render_buffer = align_temporary_buffer(buffer_frame);
 
+    int width_limit = width - offset;
+
     // store shifted pixels to temporary buffer
     for (int row = 0; row < height; row++) {
-        for (int column = 0; column < (width - offset); column++) {
-            int position_rendered_frame = row * width * 3 + column * 3;
-            int position_buffer_frame = row * width * 3 + (column + offset) * 3;
+        int frame_y = row * width * 3;
+        for (int column = 0; column < width_limit; column++) {
+            int position_rendered_frame = frame_y + column * 3;
+            int position_buffer_frame = frame_y + (column + offset) * 3;
             render_buffer[position_rendered_frame] = buffer_frame[position_buffer_frame];
             render_buffer[position_rendered_frame + 1] = buffer_frame[position_buffer_frame + 1];
             render_buffer[position_rendered_frame + 2] = buffer_frame[position_buffer_frame + 2];
@@ -278,12 +275,7 @@ unsigned char *processMoveLeft(unsigned char *buffer_frame, unsigned width, unsi
 
     // fill left over pixels with white pixels
     for (int row = 0; row < height; row++) {
-        for (int column = width - offset; column < width; column++) {
-            int position_rendered_frame = row * width * 3 + column * 3;
-            render_buffer[position_rendered_frame] = 255;
-            render_buffer[position_rendered_frame + 1] = 255;
-            render_buffer[position_rendered_frame + 2] = 255;
-        }
+        frame_clear(render_buffer + row * width * 3 + (width - offset) * 3, offset * 3);
     }
 
     // copy the temporary buffer back to original frame buffer
@@ -313,18 +305,19 @@ unsigned char *processRotateCW(unsigned char *buffer_frame, unsigned width, unsi
 
     // store shifted pixels to temporary buffer
     for (int iteration = 0; iteration < rotate_iteration; iteration++) {
-        int render_column = width - 1;
+        int render_column = (width - 1) * 3;
         int render_row = 0;
         for (int row = 0; row < width; row++) {
+            int frame_y = row * width * 3;
             for (int column = 0; column < height; column++) {
-                int position_frame_buffer = row * width * 3 + column * 3;
-                render_buffer[render_row * width * 3 + render_column * 3] = buffer_frame[position_frame_buffer];
-                render_buffer[render_row * width * 3 + render_column * 3 + 1] = buffer_frame[position_frame_buffer + 1];
-                render_buffer[render_row * width * 3 + render_column * 3 + 2] = buffer_frame[position_frame_buffer + 2];
-                render_row += 1;
+                int position_frame_buffer = frame_y + column * 3;
+                render_buffer[render_row + render_column] = buffer_frame[position_frame_buffer];
+                render_buffer[render_row + render_column + 1] = buffer_frame[position_frame_buffer + 1];
+                render_buffer[render_row + render_column + 2] = buffer_frame[position_frame_buffer + 2];
+                render_row += width * 3;
             }
             render_row = 0;
-            render_column -= 1;
+            render_column -= 3;
         }
 
         // copy the temporary buffer back to original frame buffer
