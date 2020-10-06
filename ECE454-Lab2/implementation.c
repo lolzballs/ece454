@@ -131,23 +131,25 @@ static void frame_clear(register uint8_t *dst, register size_t size) {
  * Note1: White pixels RGB(255,255,255) are treated as background. Object in the image refers to non-white pixels.
  * Note2: You can assume the object will never be moved off the screen
  **********************************************************************************************************************/
-unsigned char *processMoveUp(unsigned char *buffer_frame, unsigned width, unsigned height, int offset) {
+unsigned char *processMoveUp(register unsigned char *buffer_frame, unsigned width, unsigned height, int offset) {
     // handle negative offsets
     if (offset < 0){
         return processMoveDown(buffer_frame, width, height, offset * -1);
     }
 
-    uint8_t *render_buffer = align_temporary_buffer(buffer_frame);
+    register uint8_t *render_buffer = align_temporary_buffer(buffer_frame);
 
     unsigned height_limit = height - offset;
+    unsigned width3 = width * 3;
+    unsigned height3 = height * 3;
 
     // store shifted pixels to temporary buffer
     for (int row = 0; row < height_limit; row++) {
-        int row_offset_render = row * width * 3;
-        int row_offset_frame = (row + offset) * width * 3;
-        for (int column = 0; column < width; column++) {
-            int position_rendered_frame = row_offset_render + column * 3;
-            int position_buffer_frame = row_offset_frame + column * 3;
+        int row_offset_render = row * width3;
+        int row_offset_frame = (row + offset) * width3;
+        for (int column = 0; column < width3; column += 3) {
+            int position_rendered_frame = row_offset_render + column;
+            int position_buffer_frame = row_offset_frame + column;
             render_buffer[position_rendered_frame] = buffer_frame[position_buffer_frame];
             render_buffer[position_rendered_frame + 1] = buffer_frame[position_buffer_frame + 1];
             render_buffer[position_rendered_frame + 2] = buffer_frame[position_buffer_frame + 2];
@@ -155,10 +157,10 @@ unsigned char *processMoveUp(unsigned char *buffer_frame, unsigned width, unsign
     }
 
     // fill left over pixels with white pixels
-    frame_clear(render_buffer + (height - offset) * width * 3, offset * width * 3);
+    frame_clear(render_buffer + (height - offset) * width3, offset * width3);
 
     // copy the temporary buffer back to original frame buffer
-    frame_copy(render_buffer, buffer_frame, width * height * 3);
+    frame_copy(render_buffer, buffer_frame, width * height3);
 
     // return a pointer to the updated image buffer
     return buffer_frame;
@@ -173,19 +175,24 @@ unsigned char *processMoveUp(unsigned char *buffer_frame, unsigned width, unsign
  * Note1: White pixels RGB(255,255,255) are treated as background. Object in the image refers to non-white pixels.
  * Note2: You can assume the object will never be moved off the screen
  **********************************************************************************************************************/
-unsigned char *processMoveRight(unsigned char *buffer_frame, unsigned width, unsigned height, int offset) {
+unsigned char *processMoveRight(register unsigned char *buffer_frame, unsigned width, unsigned height, int offset) {
     // handle negative offsets
     if (offset < 0){
         return processMoveLeft(buffer_frame, width, height, offset * -1);
     }
     
-    uint8_t *render_buffer = align_temporary_buffer(buffer_frame);
+    register uint8_t *render_buffer = align_temporary_buffer(buffer_frame);
+
+    unsigned width3 = width * 3;
+    unsigned height3 = height * 3;
+    unsigned offset3 = offset * 3;
 
     // store shifted pixels to temporary buffer
     for (int row = 0; row < height; row++) {
-        for (int column = offset; column < width; column++) {
-            int position_rendered_frame = row * width * 3 + column * 3;
-            int position_buffer_frame = row * width * 3 + (column - offset) * 3;
+        int row_offset = row * width3;
+        for (int column = offset3; column < width3; column += 3) {
+            int position_rendered_frame = row_offset + column;
+            int position_buffer_frame = position_rendered_frame - offset3;
             render_buffer[position_rendered_frame] = buffer_frame[position_buffer_frame];
             render_buffer[position_rendered_frame + 1] = buffer_frame[position_buffer_frame + 1];
             render_buffer[position_rendered_frame + 2] = buffer_frame[position_buffer_frame + 2];
@@ -194,11 +201,11 @@ unsigned char *processMoveRight(unsigned char *buffer_frame, unsigned width, uns
 
     // fill left over pixels with white pixels
     for (int row = 0; row < height; row++) {
-        frame_clear(render_buffer + row * width * 3, offset * 3);
+        frame_clear(render_buffer + row * width3, offset3);
     }
 
     // copy the temporary buffer back to original frame buffer
-    frame_copy(render_buffer, buffer_frame, width * height * 3);
+    frame_copy(render_buffer, buffer_frame, width * height3);
 
     // return a pointer to the updated image buffer
     return buffer_frame;
@@ -213,19 +220,25 @@ unsigned char *processMoveRight(unsigned char *buffer_frame, unsigned width, uns
  * Note1: White pixels RGB(255,255,255) are treated as background. Object in the image refers to non-white pixels.
  * Note2: You can assume the object will never be moved off the screen
  **********************************************************************************************************************/
-unsigned char *processMoveDown(unsigned char *buffer_frame, unsigned width, unsigned height, int offset) {
+unsigned char *processMoveDown(register unsigned char *buffer_frame, unsigned width, unsigned height, int offset) {
     // handle negative offsets
     if (offset < 0){
         return processMoveUp(buffer_frame, width, height, offset * -1);
     }
 
-    uint8_t *render_buffer = align_temporary_buffer(buffer_frame);
+    register uint8_t *render_buffer = align_temporary_buffer(buffer_frame);
+
+    unsigned width3 = width * 3;
+    unsigned height3 = height * 3;
+    unsigned offset3 = offset * 3;
 
     // store shifted pixels to temporary buffer
-    for (int row = offset; row < height; row++) {
-        for (int column = 0; column < width; column++) {
-            int position_rendered_frame = row * width * 3 + column * 3;
-            int position_buffer_frame = (row - offset) * width * 3 + column * 3;
+    for (int row = offset3; row < height3; row += 3) {
+        int row_offset_render = row * width;
+        int row_offset_frame = (row - offset3) * width;
+        for (int column = 0; column < width3; column += 3) {
+            int position_rendered_frame = row_offset_render + column;
+            int position_buffer_frame = row_offset_frame + column;
             render_buffer[position_rendered_frame] = buffer_frame[position_buffer_frame];
             render_buffer[position_rendered_frame + 1] = buffer_frame[position_buffer_frame + 1];
             render_buffer[position_rendered_frame + 2] = buffer_frame[position_buffer_frame + 2];
@@ -251,13 +264,13 @@ unsigned char *processMoveDown(unsigned char *buffer_frame, unsigned width, unsi
  * Note1: White pixels RGB(255,255,255) are treated as background. Object in the image refers to non-white pixels.
  * Note2: You can assume the object will never be moved off the screen
  **********************************************************************************************************************/
-unsigned char *processMoveLeft(unsigned char *buffer_frame, unsigned width, unsigned height, int offset) {
+unsigned char *processMoveLeft(register unsigned char *buffer_frame, unsigned width, unsigned height, int offset) {
     // handle negative offsets
     if (offset < 0){
         return processMoveRight(buffer_frame, width, height, offset * -1);
     }
 
-    uint8_t *render_buffer = align_temporary_buffer(buffer_frame);
+    register uint8_t *render_buffer = align_temporary_buffer(buffer_frame);
 
     int width_limit = width - offset;
 
@@ -293,7 +306,7 @@ unsigned char *processMoveLeft(unsigned char *buffer_frame, unsigned width, unsi
  * @return - pointer pointing a buffer storing a modified 24-bit bitmap image
  * Note: You can assume the frame will always be square and you will be rotating the entire image
  **********************************************************************************************************************/
-unsigned char *processRotateCW(unsigned char *buffer_frame, unsigned width, unsigned height,
+unsigned char *processRotateCW(register unsigned char *buffer_frame, unsigned width, unsigned height,
                                int rotate_iteration) {
     rotate_iteration = rotate_iteration % 4;
     // handle negative offsets
@@ -301,20 +314,25 @@ unsigned char *processRotateCW(unsigned char *buffer_frame, unsigned width, unsi
         return processRotateCCW(buffer_frame, width, height, rotate_iteration * -1);
     }
 
-    uint8_t *render_buffer = align_temporary_buffer(buffer_frame);
+    register uint8_t *render_buffer = align_temporary_buffer(buffer_frame);
+
+    int width3 = width * 3;
+    int height3 = height * 3;
+    int render_column_init = width3 - 3;
+    int row_limit = width3 * width;
 
     // store shifted pixels to temporary buffer
     for (int iteration = 0; iteration < rotate_iteration; iteration++) {
-        int render_column = (width - 1) * 3;
+        int render_column = render_column_init;
         int render_row = 0;
-        for (int row = 0; row < width; row++) {
-            int frame_y = row * width * 3;
-            for (int column = 0; column < height; column++) {
-                int position_frame_buffer = frame_y + column * 3;
-                render_buffer[render_row + render_column] = buffer_frame[position_frame_buffer];
-                render_buffer[render_row + render_column + 1] = buffer_frame[position_frame_buffer + 1];
-                render_buffer[render_row + render_column + 2] = buffer_frame[position_frame_buffer + 2];
-                render_row += width * 3;
+        for (int row = 0; row < row_limit; row += width3) {
+            for (int column = 0; column < height3; column += 3) {
+                int position_render_buffer = render_row + render_column;
+                int position_frame_buffer = row + column;
+                render_buffer[position_render_buffer] = buffer_frame[position_frame_buffer];
+                render_buffer[position_render_buffer + 1] = buffer_frame[position_frame_buffer + 1];
+                render_buffer[position_render_buffer + 2] = buffer_frame[position_frame_buffer + 2];
+                render_row += width3;
             }
             render_row = 0;
             render_column -= 3;
@@ -336,7 +354,7 @@ unsigned char *processRotateCW(unsigned char *buffer_frame, unsigned width, unsi
  * @return - pointer pointing a buffer storing a modified 24-bit bitmap image
  * Note: You can assume the frame will always be square and you will be rotating the entire image
  **********************************************************************************************************************/
-unsigned char *processRotateCCW(unsigned char *buffer_frame, unsigned width, unsigned height,
+unsigned char *processRotateCCW(register unsigned char *buffer_frame, unsigned width, unsigned height,
                                 int rotate_iteration) {
     if (rotate_iteration < 0){
         // handle negative offsets
@@ -358,8 +376,8 @@ unsigned char *processRotateCCW(unsigned char *buffer_frame, unsigned width, uns
  * @param _unused - this field is unused
  * @return
  **********************************************************************************************************************/
-unsigned char *processMirrorX(unsigned char *buffer_frame, unsigned int width, unsigned int height, int _unused) {
-    uint8_t *render_buffer = align_temporary_buffer(buffer_frame);
+unsigned char *processMirrorX(register unsigned char *buffer_frame, unsigned int width, unsigned int height, int _unused) {
+    register uint8_t *render_buffer = align_temporary_buffer(buffer_frame);
 
     // store shifted pixels to temporary buffer
     for (int row = 0; row < height; row++) {
@@ -386,8 +404,8 @@ unsigned char *processMirrorX(unsigned char *buffer_frame, unsigned int width, u
  * @param _unused - this field is unused
  * @return
  **********************************************************************************************************************/
-unsigned char *processMirrorY(unsigned char *buffer_frame, unsigned width, unsigned height, int _unused) {
-    uint8_t *render_buffer = align_temporary_buffer(buffer_frame);
+unsigned char *processMirrorY(register unsigned char *buffer_frame, unsigned width, unsigned height, int _unused) {
+    register uint8_t *render_buffer = align_temporary_buffer(buffer_frame);
 
     // store shifted pixels to temporary buffer
     for (int row = 0; row < height; row++) {
