@@ -192,18 +192,20 @@ unsigned char *processMoveRight(register unsigned char *buffer_frame, unsigned w
     unsigned column_limit = width3 - offset3;
 
     int position_render_buffer = offset3;
+    int position_buffer_frame = 0;
     // store shifted pixels to temporary buffer
     for (int row = 0; row < height; row++) {
         for (int column = 0; column < column_limit; column += 3) {
-            int position_buffer_frame = row * width3 + column;
             render_buffer[position_render_buffer] = buffer_frame[position_buffer_frame];
             render_buffer[position_render_buffer + 1] = buffer_frame[position_buffer_frame + 1];
             render_buffer[position_render_buffer + 2] = buffer_frame[position_buffer_frame + 2];
 
             position_render_buffer += 3;
+            position_buffer_frame += 3;
         }
 
         position_render_buffer += offset3; // TODO: Fix this
+        position_buffer_frame += offset3;
     }
 
     // fill left over pixels with white pixels
