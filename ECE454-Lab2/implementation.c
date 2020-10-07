@@ -277,18 +277,24 @@ unsigned char *processMoveLeft(register unsigned char *buffer_frame, unsigned wi
 
     register uint8_t *render_buffer = align_temporary_buffer(buffer_frame);
 
-    int width_limit = width - offset;
+    unsigned width3 = width * 3;
+    unsigned height3 = height * 3;
+    unsigned offset3 = offset * 3;
 
+    int position_render_buffer = 0;
     // store shifted pixels to temporary buffer
     for (int row = 0; row < height; row++) {
-        int frame_y = row * width * 3;
-        for (int column = 0; column < width_limit; column++) {
-            int position_rendered_frame = frame_y + column * 3;
-            int position_buffer_frame = frame_y + (column + offset) * 3;
-            render_buffer[position_rendered_frame] = buffer_frame[position_buffer_frame];
-            render_buffer[position_rendered_frame + 1] = buffer_frame[position_buffer_frame + 1];
-            render_buffer[position_rendered_frame + 2] = buffer_frame[position_buffer_frame + 2];
+        for (int column = offset3; column < width3; column += 3) {
+            int position_buffer_frame = row * width3 + column;
+
+            render_buffer[position_render_buffer] = buffer_frame[position_buffer_frame];
+            render_buffer[position_render_buffer + 1] = buffer_frame[position_buffer_frame + 1];
+            render_buffer[position_render_buffer + 2] = buffer_frame[position_buffer_frame + 2];
+
+            position_render_buffer += 3;
         }
+
+        position_render_buffer += offset3;
     }
 
     // fill left over pixels with white pixels
