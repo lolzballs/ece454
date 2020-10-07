@@ -150,8 +150,7 @@ unsigned char *processMoveUp(register unsigned char *buffer_frame, unsigned widt
     // store shifted pixels to temporary buffer
     for (int row = offset; row < height; row++) {
         for (int column = 0; column < width3; column += 3) {
-            render_buffer[position_render_buffer] = buffer_frame[position_buffer_frame];
-            render_buffer[position_render_buffer + 1] = buffer_frame[position_buffer_frame + 1];
+            *((uint16_t*)&render_buffer[position_render_buffer]) = *((uint16_t*)&buffer_frame[position_buffer_frame]);
             render_buffer[position_render_buffer + 2] = buffer_frame[position_buffer_frame + 2];
 
             position_render_buffer += 3;
