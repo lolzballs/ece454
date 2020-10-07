@@ -187,17 +187,21 @@ unsigned char *processMoveRight(register unsigned char *buffer_frame, unsigned w
     unsigned width3 = width * 3;
     unsigned height3 = height * 3;
     unsigned offset3 = offset * 3;
+    unsigned column_limit = width3 - offset3;
 
+    int position_render_buffer = offset3;
     // store shifted pixels to temporary buffer
     for (int row = 0; row < height; row++) {
-        int row_offset = row * width3;
-        for (int column = offset3; column < width3; column += 3) {
-            int position_rendered_frame = row_offset + column;
-            int position_buffer_frame = position_rendered_frame - offset3;
-            render_buffer[position_rendered_frame] = buffer_frame[position_buffer_frame];
-            render_buffer[position_rendered_frame + 1] = buffer_frame[position_buffer_frame + 1];
-            render_buffer[position_rendered_frame + 2] = buffer_frame[position_buffer_frame + 2];
+        for (int column = 0; column < column_limit; column += 3) {
+            int position_buffer_frame = row * width3 + column;
+            render_buffer[position_render_buffer] = buffer_frame[position_buffer_frame];
+            render_buffer[position_render_buffer + 1] = buffer_frame[position_buffer_frame + 1];
+            render_buffer[position_render_buffer + 2] = buffer_frame[position_buffer_frame + 2];
+
+            position_render_buffer += 3;
         }
+
+        position_render_buffer += width3 - column_limit;
     }
 
     // fill left over pixels with white pixels
@@ -319,52 +323,59 @@ unsigned char *processRotateCW(unsigned char *buffer_frame, unsigned width, unsi
 
     int width3 = width * 3;
     int height3 = height * 3;
+    int size = width * height;
+    int size3 = size * 3;
 
     if (rotate_iteration == 1) {
+        int position_render_buffer = width3 - 3;
         for (int row = 0; row < height; row++) {
-            int render_column = width - row - 1;
             for (int column = 0; column < width; column++) {
-                int render_row = column;
-                int position_render_buffer = render_row * width3 + render_column * 3;
                 int position_frame_buffer = row * width3 + column * 3;
 
                 render_buffer[position_render_buffer] = buffer_frame[position_frame_buffer];
                 render_buffer[position_render_buffer+1] = buffer_frame[position_frame_buffer+1];
                 render_buffer[position_render_buffer+2] = buffer_frame[position_frame_buffer+2];
+
+                position_render_buffer += width3;
             }
+
+            position_render_buffer -= 3 + size3;
         }
     } else if (rotate_iteration == 2) {
+        int position_render_buffer = size3 - width3; // (height - 1) * width3
         for (int row = 0; row < height; row++) {
-            int render_row = height - row - 1;
+            position_render_buffer += width3 - 3; // (width - 1) * 3
             for (int column = 0; column < width; column++) {
-                int render_column = width - column - 1;
-                int position_render_buffer = render_row * width3 + render_column * 3;
                 int position_frame_buffer = row * width3 + column * 3;
 
                 render_buffer[position_render_buffer] = buffer_frame[position_frame_buffer];
                 render_buffer[position_render_buffer+1] = buffer_frame[position_frame_buffer+1];
                 render_buffer[position_render_buffer+2] = buffer_frame[position_frame_buffer+2];
+
+                position_render_buffer -= 3;
             }
+
+            position_render_buffer -= width3 - 3;
         }
     } else if (rotate_iteration == 3) {
+        int position_render_buffer = 0;
         for (int row = 0; row < height; row++) {
-            int render_column = row;
+            position_render_buffer += size3 - width3; // (width - 1) * width3
             for (int column = 0; column < height; column++) {
-                int render_row = width - column - 1;
-                int position_render_buffer = render_row * width3 + render_column * 3;
                 int position_frame_buffer = row * width3 + column * 3;
 
                 render_buffer[position_render_buffer] = buffer_frame[position_frame_buffer];
                 render_buffer[position_render_buffer+1] = buffer_frame[position_frame_buffer+1];
                 render_buffer[position_render_buffer+2] = buffer_frame[position_frame_buffer+2];
+
+                position_render_buffer -= width3;
             }
+
+            position_render_buffer += width3 + 3;
         }
     }
 
     frame_copy(render_buffer, buffer_frame, width * height * 3);
-    return buffer_frame;
-
-    // return a pointer to the updated image buffer
     return buffer_frame;
 }
 
@@ -378,16 +389,70 @@ unsigned char *processRotateCW(unsigned char *buffer_frame, unsigned width, unsi
  **********************************************************************************************************************/
 unsigned char *processRotateCCW(register unsigned char *buffer_frame, unsigned width, unsigned height,
                                 int rotate_iteration) {
+
+    rotate_iteration = rotate_iteration % 4;
+    // handle negative offsets
     if (rotate_iteration < 0){
-        // handle negative offsets
-        // rotating 90 degrees counter clockwise in opposite direction is equal to 90 degrees in cw direction
-        buffer_frame = processRotateCW(buffer_frame, width, height, -rotate_iteration);
-    } else {
-        // rotating 90 degrees counter clockwise is equivalent of rotating 270 degrees clockwise
-        buffer_frame = processRotateCW(buffer_frame, width, height, 3 * rotate_iteration);
+        return processRotateCW(buffer_frame, width, height, rotate_iteration * -1);
     }
 
-    // return a pointer to the updated image buffer
+    uint8_t *render_buffer = align_temporary_buffer(buffer_frame);
+
+    int width3 = width * 3;
+    int height3 = height * 3;
+    int size = width * height;
+    int size3 = size * 3;
+
+    if (rotate_iteration == 3) {
+        int position_render_buffer = width3 - 3;
+        for (int row = 0; row < height; row++) {
+            for (int column = 0; column < width; column++) {
+                int position_frame_buffer = row * width3 + column * 3;
+
+                render_buffer[position_render_buffer] = buffer_frame[position_frame_buffer];
+                render_buffer[position_render_buffer+1] = buffer_frame[position_frame_buffer+1];
+                render_buffer[position_render_buffer+2] = buffer_frame[position_frame_buffer+2];
+
+                position_render_buffer += width3;
+            }
+
+            position_render_buffer -= 3 + size3;
+        }
+    } else if (rotate_iteration == 2) {
+        int position_render_buffer = size3 - width3; // (height - 1) * width3
+        for (int row = 0; row < height; row++) {
+            position_render_buffer += width3 - 3; // (width - 1) * 3
+            for (int column = 0; column < width; column++) {
+                int position_frame_buffer = row * width3 + column * 3;
+
+                render_buffer[position_render_buffer] = buffer_frame[position_frame_buffer];
+                render_buffer[position_render_buffer+1] = buffer_frame[position_frame_buffer+1];
+                render_buffer[position_render_buffer+2] = buffer_frame[position_frame_buffer+2];
+
+                position_render_buffer -= 3;
+            }
+
+            position_render_buffer -= width3 - 3;
+        }
+    } else if (rotate_iteration == 1) {
+        int position_render_buffer = 0;
+        for (int row = 0; row < height; row++) {
+            position_render_buffer += size3 - width3; // (width - 1) * width3
+            for (int column = 0; column < height; column++) {
+                int position_frame_buffer = row * width3 + column * 3;
+
+                render_buffer[position_render_buffer] = buffer_frame[position_frame_buffer];
+                render_buffer[position_render_buffer+1] = buffer_frame[position_frame_buffer+1];
+                render_buffer[position_render_buffer+2] = buffer_frame[position_frame_buffer+2];
+
+                position_render_buffer -= width3;
+            }
+
+            position_render_buffer += width3 + 3;
+        }
+    }
+
+    frame_copy(render_buffer, buffer_frame, width * height * 3);
     return buffer_frame;
 }
 
