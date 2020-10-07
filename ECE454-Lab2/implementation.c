@@ -143,23 +143,24 @@ unsigned char *processMoveUp(register unsigned char *buffer_frame, unsigned widt
     unsigned height_limit = height - offset;
     unsigned width3 = width * 3;
     unsigned height3 = height * 3;
+    unsigned offsetwidth3 = offset * width3;
 
     int position_render_buffer = 0;
+    int position_buffer_frame = offsetwidth3;
     // store shifted pixels to temporary buffer
     for (int row = offset; row < height; row++) {
         for (int column = 0; column < width3; column += 3) {
-            int position_buffer_frame = row * width3 + column;
-
             render_buffer[position_render_buffer] = buffer_frame[position_buffer_frame];
             render_buffer[position_render_buffer + 1] = buffer_frame[position_buffer_frame + 1];
             render_buffer[position_render_buffer + 2] = buffer_frame[position_buffer_frame + 2];
 
             position_render_buffer += 3;
+            position_buffer_frame += 3;
         }
     }
 
     // fill left over pixels with white pixels
-    frame_clear(render_buffer + (height - offset) * width3, offset * width3);
+    frame_clear(render_buffer + height_limit * width3, offsetwidth3);
 
     // copy the temporary buffer back to original frame buffer
     frame_copy(render_buffer, buffer_frame, width * height3);
@@ -202,7 +203,7 @@ unsigned char *processMoveRight(register unsigned char *buffer_frame, unsigned w
             position_render_buffer += 3;
         }
 
-        position_render_buffer += width3 - column_limit; // TODO: Fix this
+        position_render_buffer += offset3; // TODO: Fix this
     }
 
     // fill left over pixels with white pixels
