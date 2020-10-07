@@ -8,6 +8,7 @@
 #include "implementation_reference.h"   // DO NOT REMOVE this line
 
 // I added these
+#include <assert.h>
 #include <sys/mman.h>
 #include <x86intrin.h>
 
@@ -321,21 +322,23 @@ unsigned char *processRotateCW(register unsigned char *buffer_frame, unsigned wi
     int render_column_init = width3 - 3;
     int row_limit = width3 * width;
 
+    int render_buffer_write_offset = width3 * height + 3;
+
     // store shifted pixels to temporary buffer
     for (int iteration = 0; iteration < rotate_iteration; iteration++) {
-        int render_column = render_column_init;
-        int render_row = 0;
+        uint8_t *render_buffer_write = &render_buffer[render_column_init];
+
         for (int row = 0; row < row_limit; row += width3) {
             for (int column = 0; column < height3; column += 3) {
-                int position_render_buffer = render_row + render_column;
                 int position_frame_buffer = row + column;
-                render_buffer[position_render_buffer] = buffer_frame[position_frame_buffer];
-                render_buffer[position_render_buffer + 1] = buffer_frame[position_frame_buffer + 1];
-                render_buffer[position_render_buffer + 2] = buffer_frame[position_frame_buffer + 2];
-                render_row += width3;
+                render_buffer_write[0] = buffer_frame[position_frame_buffer];
+                render_buffer_write[1] = buffer_frame[position_frame_buffer + 1];
+                render_buffer_write[2] = buffer_frame[position_frame_buffer + 2];
+
+                render_buffer_write += width3;
             }
-            render_row = 0;
-            render_column -= 3;
+
+            render_buffer_write -= render_buffer_write_offset;
         }
 
         // copy the temporary buffer back to original frame buffer
