@@ -30,7 +30,7 @@ static inline uint8_t* align_temporary_buffer(uint8_t *frame_buffer) {
 }
 
 // src, dst mod 32 must be equal
-static void frame_copy(register uint8_t *src, register uint8_t *dst, register size_t size) {
+static inline void frame_copy(register uint8_t *src, register uint8_t *dst, register size_t size) {
     register size_t offset = 0;
 
     // assert((size_t) src % 32 == (size_t) dst % 32);
@@ -87,7 +87,7 @@ static void frame_copy(register uint8_t *src, register uint8_t *dst, register si
     // assert(offset == size);
 }
 
-static void frame_clear(register uint8_t *dst, register size_t size) {
+static inline void frame_clear(register uint8_t *dst, register size_t size) {
     register size_t offset;
 
     register __m256i *dst_vect = (__m256i*) dst;
@@ -144,16 +144,17 @@ unsigned char *processMoveUp(register unsigned char *buffer_frame, unsigned widt
     unsigned width3 = width * 3;
     unsigned height3 = height * 3;
 
+    int position_render_buffer = 0;
     // store shifted pixels to temporary buffer
-    for (int row = 0; row < height_limit; row++) {
-        int row_offset_render = row * width3;
-        int row_offset_frame = (row + offset) * width3;
+    for (int row = offset; row < height; row++) {
         for (int column = 0; column < width3; column += 3) {
-            int position_rendered_frame = row_offset_render + column;
-            int position_buffer_frame = row_offset_frame + column;
-            render_buffer[position_rendered_frame] = buffer_frame[position_buffer_frame];
-            render_buffer[position_rendered_frame + 1] = buffer_frame[position_buffer_frame + 1];
-            render_buffer[position_rendered_frame + 2] = buffer_frame[position_buffer_frame + 2];
+            int position_buffer_frame = row * width3 + column;
+
+            render_buffer[position_render_buffer] = buffer_frame[position_buffer_frame];
+            render_buffer[position_render_buffer + 1] = buffer_frame[position_buffer_frame + 1];
+            render_buffer[position_render_buffer + 2] = buffer_frame[position_buffer_frame + 2];
+
+            position_render_buffer += 3;
         }
     }
 
@@ -201,7 +202,7 @@ unsigned char *processMoveRight(register unsigned char *buffer_frame, unsigned w
             position_render_buffer += 3;
         }
 
-        position_render_buffer += width3 - column_limit;
+        position_render_buffer += width3 - column_limit; // TODO: Fix this
     }
 
     // fill left over pixels with white pixels
