@@ -203,7 +203,7 @@ unsigned char *processMoveRight(register unsigned char *buffer_frame, unsigned w
             position_buffer_frame += 3;
         }
 
-        position_render_buffer += offset3; // TODO: Fix this
+        position_render_buffer += offset3;
         position_buffer_frame += offset3;
     }
 
@@ -283,30 +283,31 @@ unsigned char *processMoveLeft(register unsigned char *buffer_frame, unsigned wi
     unsigned width3 = width * 3;
     unsigned height3 = height * 3;
     unsigned offset3 = offset * 3;
+    unsigned size3 = width3 * height;
 
+    int position_buffer_frame = offset3;
     int position_render_buffer = 0;
     // store shifted pixels to temporary buffer
     for (int row = 0; row < height; row++) {
         for (int column = offset3; column < width3; column += 3) {
-            int position_buffer_frame = row * width3 + column;
-
-            render_buffer[position_render_buffer] = buffer_frame[position_buffer_frame];
-            render_buffer[position_render_buffer + 1] = buffer_frame[position_buffer_frame + 1];
+            *((uint16_t*)&render_buffer[position_render_buffer]) = *((uint16_t*)&buffer_frame[position_buffer_frame]);
             render_buffer[position_render_buffer + 2] = buffer_frame[position_buffer_frame + 2];
 
             position_render_buffer += 3;
+            position_buffer_frame += 3;
         }
 
         position_render_buffer += offset3;
+        position_buffer_frame += offset3;
     }
 
     // fill left over pixels with white pixels
-    for (int row = 0; row < height; row++) {
-        frame_clear(render_buffer + row * width * 3 + (width - offset) * 3, offset * 3);
+    for (int row = 0; row < size3; row+=width3) {
+        frame_clear(render_buffer + row + width3 - offset3, offset3);
     }
 
     // copy the temporary buffer back to original frame buffer
-    frame_copy(render_buffer, buffer_frame, width * height * 3);
+    frame_copy(render_buffer, buffer_frame, size3);
 
     // return a pointer to the updated image buffer
     return buffer_frame;
