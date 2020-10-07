@@ -307,7 +307,7 @@ unsigned char *processMoveLeft(register unsigned char *buffer_frame, unsigned wi
  * @return - pointer pointing a buffer storing a modified 24-bit bitmap image
  * Note: You can assume the frame will always be square and you will be rotating the entire image
  **********************************************************************************************************************/
-unsigned char *processRotateCW(register unsigned char *buffer_frame, unsigned width, unsigned height,
+unsigned char *processRotateCW(unsigned char *buffer_frame, unsigned width, unsigned height,
                                int rotate_iteration) {
     rotate_iteration = rotate_iteration % 4;
     // handle negative offsets
@@ -315,35 +315,54 @@ unsigned char *processRotateCW(register unsigned char *buffer_frame, unsigned wi
         return processRotateCCW(buffer_frame, width, height, rotate_iteration * -1);
     }
 
-    register uint8_t *render_buffer = align_temporary_buffer(buffer_frame);
+    uint8_t *render_buffer = align_temporary_buffer(buffer_frame);
 
     int width3 = width * 3;
     int height3 = height * 3;
-    int render_column_init = width3 - 3;
-    int row_limit = width3 * width;
 
-    int render_buffer_write_offset = width3 * height + 3;
+    if (rotate_iteration == 1) {
+        for (int row = 0; row < height; row++) {
+            int render_column = width - row - 1;
+            for (int column = 0; column < width; column++) {
+                int render_row = column;
+                int position_render_buffer = render_row * width3 + render_column * 3;
+                int position_frame_buffer = row * width3 + column * 3;
 
-    // store shifted pixels to temporary buffer
-    for (int iteration = 0; iteration < rotate_iteration; iteration++) {
-        uint8_t *render_buffer_write = &render_buffer[render_column_init];
-
-        for (int row = 0; row < row_limit; row += width3) {
-            for (int column = 0; column < height3; column += 3) {
-                int position_frame_buffer = row + column;
-                render_buffer_write[0] = buffer_frame[position_frame_buffer];
-                render_buffer_write[1] = buffer_frame[position_frame_buffer + 1];
-                render_buffer_write[2] = buffer_frame[position_frame_buffer + 2];
-
-                render_buffer_write += width3;
+                render_buffer[position_render_buffer] = buffer_frame[position_frame_buffer];
+                render_buffer[position_render_buffer+1] = buffer_frame[position_frame_buffer+1];
+                render_buffer[position_render_buffer+2] = buffer_frame[position_frame_buffer+2];
             }
-
-            render_buffer_write -= render_buffer_write_offset;
         }
+    } else if (rotate_iteration == 2) {
+        for (int row = 0; row < height; row++) {
+            int render_row = height - row - 1;
+            for (int column = 0; column < width; column++) {
+                int render_column = width - column - 1;
+                int position_render_buffer = render_row * width3 + render_column * 3;
+                int position_frame_buffer = row * width3 + column * 3;
 
-        // copy the temporary buffer back to original frame buffer
-        frame_copy(render_buffer, buffer_frame, width * height * 3);
+                render_buffer[position_render_buffer] = buffer_frame[position_frame_buffer];
+                render_buffer[position_render_buffer+1] = buffer_frame[position_frame_buffer+1];
+                render_buffer[position_render_buffer+2] = buffer_frame[position_frame_buffer+2];
+            }
+        }
+    } else if (rotate_iteration == 3) {
+        for (int row = 0; row < height; row++) {
+            int render_column = row;
+            for (int column = 0; column < height; column++) {
+                int render_row = width - column - 1;
+                int position_render_buffer = render_row * width3 + render_column * 3;
+                int position_frame_buffer = row * width3 + column * 3;
+
+                render_buffer[position_render_buffer] = buffer_frame[position_frame_buffer];
+                render_buffer[position_render_buffer+1] = buffer_frame[position_frame_buffer+1];
+                render_buffer[position_render_buffer+2] = buffer_frame[position_frame_buffer+2];
+            }
+        }
     }
+
+    frame_copy(render_buffer, buffer_frame, width * height * 3);
+    return buffer_frame;
 
     // return a pointer to the updated image buffer
     return buffer_frame;
