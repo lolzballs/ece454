@@ -481,7 +481,6 @@ unsigned char *processMirrorX(register unsigned char *buffer_frame, unsigned int
     int position_buffer_frame = 0;
     // store shifted pixels to temporary buffer
     for (int row = 0; row < height; row++) {
-        int render_row = height - row - 1;
         for (int column = 0; column < width; column++) {
             *((uint16_t*)&render_buffer[position_render_buffer]) = *((uint16_t*)&buffer_frame[position_buffer_frame]);
             render_buffer[position_render_buffer + 2] = buffer_frame[position_buffer_frame + 2];
@@ -510,15 +509,22 @@ unsigned char *processMirrorX(register unsigned char *buffer_frame, unsigned int
 unsigned char *processMirrorY(register unsigned char *buffer_frame, unsigned width, unsigned height, int _unused) {
     register uint8_t *render_buffer = align_temporary_buffer(buffer_frame);
 
+    unsigned width3 = width * 3;
+    unsigned size3 = width * width3;
+
+    int position_buffer_frame = 0;
+    int position_render_buffer = width3 - 3;
     // store shifted pixels to temporary buffer
     for (int row = 0; row < height; row++) {
         for (int column = 0; column < width; column++) {
-            int position_rendered_frame = row * height * 3 + column * 3;
-            int position_buffer_frame = row * height * 3 + (width - column - 1) * 3;
-            render_buffer[position_rendered_frame] = buffer_frame[position_buffer_frame];
-            render_buffer[position_rendered_frame + 1] = buffer_frame[position_buffer_frame + 1];
-            render_buffer[position_rendered_frame + 2] = buffer_frame[position_buffer_frame + 2];
+            *((uint16_t*)&render_buffer[position_render_buffer]) = *((uint16_t*)&buffer_frame[position_buffer_frame]);
+            render_buffer[position_render_buffer + 2] = buffer_frame[position_buffer_frame + 2];
+
+            position_buffer_frame += 3;
+            position_render_buffer -= 3;
         }
+
+        position_render_buffer += width3 + width3;
     }
 
     // copy the temporary buffer back to original frame buffer
