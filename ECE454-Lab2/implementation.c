@@ -338,14 +338,14 @@ unsigned char *processRotateCW(unsigned char *buffer_frame, unsigned width, unsi
 
     if (rotate_iteration == 1) {
         int position_render_buffer = width3 - 3;
-        int position_frame_buffer = 0;
+        int position_buffer_frame = 0;
         for (int row = 0; row < height; row++) {
             for (int column = 0; column < width; column++) {
-            *((uint16_t*)&render_buffer[position_render_buffer]) = *((uint16_t*)&buffer_frame[position_frame_buffer]);
-                render_buffer[position_render_buffer+2] = buffer_frame[position_frame_buffer+2];
+                *((uint16_t*)&render_buffer[position_render_buffer]) = *((uint16_t*)&buffer_frame[position_buffer_frame]);
+                render_buffer[position_render_buffer+2] = buffer_frame[position_buffer_frame+2];
 
                 position_render_buffer += width3;
-                position_frame_buffer += 3;
+                position_buffer_frame += 3;
             }
 
             position_render_buffer -= 3 + size3;
@@ -412,50 +412,46 @@ unsigned char *processRotateCCW(register unsigned char *buffer_frame, unsigned w
 
     if (rotate_iteration == 3) {
         int position_render_buffer = width3 - 3;
+        int position_buffer_frame = 0;
         for (int row = 0; row < height; row++) {
             for (int column = 0; column < width; column++) {
-                int position_frame_buffer = row * width3 + column * 3;
-
-                render_buffer[position_render_buffer] = buffer_frame[position_frame_buffer];
-                render_buffer[position_render_buffer+1] = buffer_frame[position_frame_buffer+1];
-                render_buffer[position_render_buffer+2] = buffer_frame[position_frame_buffer+2];
+                *((uint16_t*)&render_buffer[position_render_buffer]) = *((uint16_t*)&buffer_frame[position_buffer_frame]);
+                render_buffer[position_render_buffer+2] = buffer_frame[position_buffer_frame+2];
 
                 position_render_buffer += width3;
+                position_buffer_frame += 3;
             }
 
             position_render_buffer -= 3 + size3;
         }
     } else if (rotate_iteration == 2) {
         int position_render_buffer = size3 - width3; // (height - 1) * width3
+        int position_buffer_frame = 0;
         for (int row = 0; row < height; row++) {
             position_render_buffer += width3 - 3; // (width - 1) * 3
             for (int column = 0; column < width; column++) {
-                int position_frame_buffer = row * width3 + column * 3;
-
-                render_buffer[position_render_buffer] = buffer_frame[position_frame_buffer];
-                render_buffer[position_render_buffer+1] = buffer_frame[position_frame_buffer+1];
-                render_buffer[position_render_buffer+2] = buffer_frame[position_frame_buffer+2];
+                *((uint16_t*)&render_buffer[position_render_buffer]) = *((uint16_t*)&buffer_frame[position_buffer_frame]);
+                render_buffer[position_render_buffer+2] = buffer_frame[position_buffer_frame+2];
 
                 position_render_buffer -= 3;
+                position_buffer_frame += 3;
             }
 
             position_render_buffer -= width3 - 3;
         }
     } else if (rotate_iteration == 1) {
-        int position_render_buffer = 0;
+        int position_render_buffer = size3 - width3;
+        int position_buffer_frame = 0;
         for (int row = 0; row < height; row++) {
-            position_render_buffer += size3 - width3; // (width - 1) * width3
             for (int column = 0; column < height; column++) {
-                int position_frame_buffer = row * width3 + column * 3;
-
-                render_buffer[position_render_buffer] = buffer_frame[position_frame_buffer];
-                render_buffer[position_render_buffer+1] = buffer_frame[position_frame_buffer+1];
-                render_buffer[position_render_buffer+2] = buffer_frame[position_frame_buffer+2];
+                *((uint16_t*)&render_buffer[position_render_buffer]) = *((uint16_t*)&buffer_frame[position_buffer_frame]);
+                render_buffer[position_render_buffer+2] = buffer_frame[position_buffer_frame+2];
 
                 position_render_buffer -= width3;
+                position_buffer_frame += 3;
             }
 
-            position_render_buffer += width3 + 3;
+            position_render_buffer += 3 + size3;
         }
     }
 
