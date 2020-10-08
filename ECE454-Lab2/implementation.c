@@ -91,7 +91,7 @@ static inline void frame_clear(register uint8_t *dst, register size_t size) {
     register size_t offset;
 
     register __m256i *dst_vect = (__m256i*) dst;
-    __m256i val_vect = _mm256_set1_epi64x(0xFFFFFFFFFFFFFFFF);
+    register __m256i val_vect = _mm256_set1_epi64x(0xFFFFFFFFFFFFFFFF);
     offset = sizeof(__m256i);
     while (offset <= size) {
         _mm256_storeu_si256(dst_vect, val_vect);
