@@ -29,6 +29,62 @@ static inline uint8_t* align_temporary_buffer(uint8_t *frame_buffer) {
     return temporary_buffer + 32 - temp_alignment + frame_alignment;
 }
 
+static inline void frame_copy_unaligned(register uint8_t *src, register uint8_t *dst, register size_t size) {
+    register size_t offset = 0;
+
+    // Copy byte by byte up until the 32-byte alignment
+    register uint8_t *src_bytes = (uint8_t*) (src);
+    register uint8_t *dst_bytes = (uint8_t*) (dst);
+    while ((size_t) src_bytes % 32 != 0) {
+        *dst_bytes = *src_bytes;
+
+        offset += sizeof(uint8_t);
+        src_bytes += 1;
+        dst_bytes += 1;
+    }
+
+    // Copy all 256 bits possible
+    __m256i *src_vect = (__m256i*) (src + offset);
+    __m256i *dst_vect = (__m256i*) (dst + offset);
+    offset += sizeof(__m256i);
+    while (offset <= size) { // equality occurs when there are exactly 32 bytes left to copy
+        _mm256_storeu_si256(dst_vect, *src_vect);
+
+        offset += sizeof(__m256i);
+        src_vect += 1;
+        dst_vect += 1;
+    }
+    // offset will be 32 bytes ahead of the last copied value
+    offset -= sizeof(__m256i);
+    
+    // Copy as many dwords as possible
+    register uint32_t *src_dwords = (uint32_t*) (src + offset);
+    register uint32_t *dst_dwords = (uint32_t*) (dst + offset);
+    offset += sizeof(uint32_t);
+    while (offset <= size) { // equality occurs when there are exactly 4 bytes left to copy
+        *dst_dwords = *src_dwords;
+
+        offset += sizeof(uint32_t);
+        src_dwords += 1;
+        dst_dwords += 1;
+    }
+    offset -= sizeof(uint32_t);
+
+    // Copy remaining bytes
+    src_bytes = (uint8_t*) (src + offset);
+    dst_bytes = (uint8_t*) (dst + offset);
+    while (offset < size) {
+        *dst_bytes = *src_bytes;
+
+        offset += sizeof(uint8_t);
+        src_bytes += 1;
+        dst_bytes += 1;
+    }
+
+    // assert(offset == size);
+}
+
+
 // src, dst mod 32 must be equal
 static inline void frame_copy(register uint8_t *src, register uint8_t *dst, register size_t size) {
     register size_t offset = 0;
@@ -140,29 +196,17 @@ unsigned char *processMoveUp(register unsigned char *buffer_frame, unsigned widt
 
     register uint8_t *render_buffer = align_temporary_buffer(buffer_frame);
 
-    unsigned height_limit = height - offset;
     unsigned width3 = width * 3;
-    unsigned height3 = height * 3;
+    unsigned height_limit = (height - offset) * width3;
     unsigned offsetwidth3 = offset * width3;
 
-    int position_render_buffer = 0;
-    int position_buffer_frame = offsetwidth3;
-    // store shifted pixels to temporary buffer
-    for (int row = offset; row < height; row++) {
-        for (int column = 0; column < width3; column += 3) {
-            *((uint16_t*)&render_buffer[position_render_buffer]) = *((uint16_t*)&buffer_frame[position_buffer_frame]);
-            render_buffer[position_render_buffer + 2] = buffer_frame[position_buffer_frame + 2];
-
-            position_render_buffer += 3;
-            position_buffer_frame += 3;
-        }
-    }
+    frame_copy_unaligned(buffer_frame + offsetwidth3, render_buffer, height_limit);
 
     // fill left over pixels with white pixels
-    frame_clear(render_buffer + height_limit * width3, offsetwidth3);
+    frame_clear(render_buffer + height_limit, offsetwidth3);
 
     // copy the temporary buffer back to original frame buffer
-    frame_copy(render_buffer, buffer_frame, width * height3);
+    frame_copy(render_buffer, buffer_frame, width * width3);
 
     // return a pointer to the updated image buffer
     return buffer_frame;
@@ -238,26 +282,16 @@ unsigned char *processMoveDown(register unsigned char *buffer_frame, unsigned wi
 
     unsigned width3 = width * 3;
     unsigned height3 = height * 3;
-    unsigned offset3 = offset * 3;
+    unsigned offsetwidth3 = offset * width3;
+    unsigned numbytes = (height - offset) * width3;
 
-    // store shifted pixels to temporary buffer
-    for (int row = offset3; row < height3; row += 3) {
-        int row_offset_render = row * width;
-        int row_offset_frame = (row - offset3) * width;
-        for (int column = 0; column < width3; column += 3) {
-            int position_rendered_frame = row_offset_render + column;
-            int position_buffer_frame = row_offset_frame + column;
-            render_buffer[position_rendered_frame] = buffer_frame[position_buffer_frame];
-            render_buffer[position_rendered_frame + 1] = buffer_frame[position_buffer_frame + 1];
-            render_buffer[position_rendered_frame + 2] = buffer_frame[position_buffer_frame + 2];
-        }
-    }
+    frame_copy_unaligned(buffer_frame, render_buffer + offsetwidth3, numbytes);
 
     // fill left over pixels with white pixels
-    frame_clear(render_buffer, offset * width * 3);
+    frame_clear(render_buffer, offsetwidth3);
 
     // copy the temporary buffer back to original frame buffer
-    frame_copy(render_buffer, buffer_frame, width * height * 3);
+    frame_copy(render_buffer, buffer_frame, width * height3);
 
     // return a pointer to the updated image buffer
     return buffer_frame;
