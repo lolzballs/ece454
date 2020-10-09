@@ -44,11 +44,20 @@ static inline void frame_copy_unaligned(register uint8_t *src, register uint8_t 
     }
 
     // Copy all 256 bits possible
-    __m256i *src_vect = (__m256i*) (src + offset);
-    __m256i *dst_vect = (__m256i*) (dst + offset);
+    register __m256i *src_vect = (__m256i*) (src + offset);
+    register __m256i *dst_vect = (__m256i*) (dst + offset);
     offset += sizeof(__m256i);
     while (offset <= size) { // equality occurs when there are exactly 32 bytes left to copy
-        _mm256_storeu_si256(dst_vect, *src_vect);
+        asm (
+                ".intel_syntax noprefix;"
+                "vmovdqa ymm0, [%0];"
+                "vmovdqu [%1], ymm0;"
+                ".att_syntax;"
+                :
+                : "r" (src_vect), "r" (dst_vect)
+                : "memory", "ymm0"
+            );
+        // _mm256_storeu_si256(dst_vect, *src_vect);
 
         offset += sizeof(__m256i);
         src_vect += 1;
@@ -103,11 +112,20 @@ static inline void frame_copy(register uint8_t *src, register uint8_t *dst, regi
     }
 
     // Copy all 256 bits possible
-    __m256i *src_vect = (__m256i*) (src + offset);
-    __m256i *dst_vect = (__m256i*) (dst + offset);
+    register __m256i *src_vect = (__m256i*) (src + offset);
+    register __m256i *dst_vect = (__m256i*) (dst + offset);
     offset += sizeof(__m256i);
     while (offset <= size) { // equality occurs when there are exactly 32 bytes left to copy
-        _mm256_stream_si256(dst_vect, *src_vect);
+        asm (
+                ".intel_syntax noprefix;"
+                "vmovdqa ymm0, [%0];"
+                "vmovntdq [%1], ymm0;"
+                ".att_syntax;"
+                :
+                : "r" (src_vect), "r" (dst_vect)
+                : "memory", "ymm0"
+            );
+        // _mm256_stream_si256(dst_vect, *src_vect);
 
         offset += sizeof(__m256i);
         src_vect += 1;
