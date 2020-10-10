@@ -20,13 +20,16 @@ unsigned char *processMoveRight(unsigned char *buffer_frame, unsigned width, uns
 unsigned char *processRotateCW(unsigned char *buffer_frame, unsigned width, unsigned height, int rotate_iteration);
 unsigned char *processRotateCCW(unsigned char *buffer_frame, unsigned width, unsigned height, int rotate_iteration);
 
-static inline uint8_t* align_temporary_buffer(uint8_t *frame_buffer) {
-    static uint8_t temporary_buffer[10000 * 10000 * 3 + sizeof(__m256i) * 2];
+uint8_t temporary_buffer1[10000 * 10000 * 3 + sizeof(__m256i) * 2] __attribute__((aligned(32)));
+uint8_t temporary_buffer2[10000 * 10000 * 3 + sizeof(__m256i) * 2] __attribute__((aligned(32)));
 
-    uint8_t frame_alignment = (size_t) frame_buffer % 32;
-    uint8_t temp_alignment = (size_t) temporary_buffer % 32;
-
-    return temporary_buffer + 32 - temp_alignment + frame_alignment;
+static inline uint8_t* acquire_temporary_buffer(uint8_t *frame_buffer) {
+    if (frame_buffer == temporary_buffer1) {
+        return temporary_buffer2;
+    } else if (frame_buffer == temporary_buffer2) {
+        return temporary_buffer1;
+    }
+    return temporary_buffer1;
 }
 
 static inline void frame_copy_unaligned(register uint8_t *src, register uint8_t *dst, register size_t size) {
@@ -57,7 +60,6 @@ static inline void frame_copy_unaligned(register uint8_t *src, register uint8_t 
                 : "r" (src_vect), "r" (dst_vect)
                 : "memory", "ymm0"
             );
-        // _mm256_storeu_si256(dst_vect, *src_vect);
 
         offset += sizeof(__m256i);
         src_vect += 1;
@@ -212,7 +214,7 @@ unsigned char *processMoveUp(register unsigned char *buffer_frame, unsigned widt
         return processMoveDown(buffer_frame, width, height, offset * -1);
     }
 
-    register uint8_t *render_buffer = align_temporary_buffer(buffer_frame);
+    register uint8_t *render_buffer = acquire_temporary_buffer(buffer_frame);
 
     unsigned width3 = width * 3;
     unsigned height_limit = (height - offset) * width3;
@@ -223,11 +225,8 @@ unsigned char *processMoveUp(register unsigned char *buffer_frame, unsigned widt
     // fill left over pixels with white pixels
     frame_clear(render_buffer + height_limit, offsetwidth3);
 
-    // copy the temporary buffer back to original frame buffer
-    frame_copy(render_buffer, buffer_frame, width * width3);
-
     // return a pointer to the updated image buffer
-    return buffer_frame;
+    return render_buffer;
 }
 
 /***********************************************************************************************************************
@@ -245,7 +244,7 @@ unsigned char *processMoveRight(register unsigned char *buffer_frame, unsigned w
         return processMoveLeft(buffer_frame, width, height, offset * -1);
     }
 
-    register uint8_t *render_buffer = align_temporary_buffer(buffer_frame);
+    register uint8_t *render_buffer = acquire_temporary_buffer(buffer_frame);
 
     unsigned width3 = width * 3;
     unsigned offset3 = offset * 3;
@@ -262,11 +261,8 @@ unsigned char *processMoveRight(register unsigned char *buffer_frame, unsigned w
         buffer_frame_start += width3;
     }
 
-    // copy the temporary buffer back to original frame buffer
-    frame_copy(render_buffer, buffer_frame, size3);
-
     // return a pointer to the updated image buffer
-    return buffer_frame;
+    return render_buffer;
 }
 
 /***********************************************************************************************************************
@@ -284,23 +280,18 @@ unsigned char *processMoveDown(register unsigned char *buffer_frame, unsigned wi
         return processMoveUp(buffer_frame, width, height, offset * -1);
     }
 
-    register uint8_t *render_buffer = align_temporary_buffer(buffer_frame);
+    register uint8_t *render_buffer = acquire_temporary_buffer(buffer_frame);
 
     unsigned width3 = width * 3;
-    unsigned height3 = height * 3;
     unsigned offsetwidth3 = offset * width3;
     unsigned numbytes = (height - offset) * width3;
 
-    frame_copy_unaligned(buffer_frame, render_buffer + offsetwidth3, numbytes);
-
     // fill left over pixels with white pixels
     frame_clear(render_buffer, offsetwidth3);
-
-    // copy the temporary buffer back to original frame buffer
-    frame_copy(render_buffer, buffer_frame, width * height3);
+    frame_copy_unaligned(buffer_frame, render_buffer + offsetwidth3, numbytes);
 
     // return a pointer to the updated image buffer
-    return buffer_frame;
+    return render_buffer;
 }
 
 /***********************************************************************************************************************
@@ -318,7 +309,7 @@ unsigned char *processMoveLeft(register unsigned char *buffer_frame, unsigned wi
         return processMoveRight(buffer_frame, width, height, offset * -1);
     }
 
-    register uint8_t *render_buffer = align_temporary_buffer(buffer_frame);
+    register uint8_t *render_buffer = acquire_temporary_buffer(buffer_frame);
 
     unsigned width3 = width * 3;
     unsigned offset3 = offset * 3;
@@ -335,11 +326,8 @@ unsigned char *processMoveLeft(register unsigned char *buffer_frame, unsigned wi
         buffer_frame_start += width3;
     }
 
-    // copy the temporary buffer back to original frame buffer
-    frame_copy(render_buffer, buffer_frame, size3);
-
     // return a pointer to the updated image buffer
-    return buffer_frame;
+    return render_buffer;
 }
 
 /***********************************************************************************************************************
@@ -353,12 +341,16 @@ unsigned char *processMoveLeft(register unsigned char *buffer_frame, unsigned wi
 unsigned char *processRotateCW(unsigned char *buffer_frame, unsigned width, unsigned height,
                                int rotate_iteration) {
     rotate_iteration = rotate_iteration % 4;
+    if (rotate_iteration == 0) {
+        return buffer_frame;
+    }
+
     // handle negative offsets
     if (rotate_iteration < 0){
         return processRotateCCW(buffer_frame, width, height, rotate_iteration * -1);
     }
 
-    uint8_t *render_buffer = align_temporary_buffer(buffer_frame);
+    uint8_t *render_buffer = acquire_temporary_buffer(buffer_frame);
 
     int width3 = width * 3;
     int height3 = height * 3;
@@ -395,24 +387,23 @@ unsigned char *processRotateCW(unsigned char *buffer_frame, unsigned width, unsi
             position_render_buffer -= width3 - 3;
         }
     } else if (rotate_iteration == 3) {
-        int position_frame_buffer = 0;
-        int position_render_buffer = 0;
+        int position_render_buffer = size3 - width3;
+        int position_buffer_frame = 0;
         for (int row = 0; row < height; row++) {
-            position_render_buffer += size3 - width3; // (width - 1) * width3
             for (int column = 0; column < height; column++) {
-                *((uint16_t*)&render_buffer[position_render_buffer]) = *((uint16_t*)&buffer_frame[position_frame_buffer]);
-                render_buffer[position_render_buffer+2] = buffer_frame[position_frame_buffer+2];
+                *((uint16_t*)&render_buffer[position_render_buffer]) = *((uint16_t*)&buffer_frame[position_buffer_frame]);
+                render_buffer[position_render_buffer+2] = buffer_frame[position_buffer_frame+2];
 
                 position_render_buffer -= width3;
-                position_frame_buffer += 3;
+                position_buffer_frame += 3;
             }
 
-            position_render_buffer += width3 + 3;
+            position_render_buffer += 3 + size3;
         }
     }
 
-    frame_copy(render_buffer, buffer_frame, width * height * 3);
-    return buffer_frame;
+    // return a pointer to the updated image buffer
+    return render_buffer;
 }
 
 /***********************************************************************************************************************
@@ -427,12 +418,15 @@ unsigned char *processRotateCCW(register unsigned char *buffer_frame, unsigned w
                                 int rotate_iteration) {
 
     rotate_iteration = rotate_iteration % 4;
+    if (rotate_iteration == 0) {
+        return buffer_frame;
+    }
     // handle negative offsets
     if (rotate_iteration < 0){
         return processRotateCW(buffer_frame, width, height, rotate_iteration * -1);
     }
 
-    uint8_t *render_buffer = align_temporary_buffer(buffer_frame);
+    uint8_t *render_buffer = acquire_temporary_buffer(buffer_frame);
 
     int width3 = width * 3;
     int height3 = height * 3;
@@ -484,8 +478,8 @@ unsigned char *processRotateCCW(register unsigned char *buffer_frame, unsigned w
         }
     }
 
-    frame_copy(render_buffer, buffer_frame, width * height * 3);
-    return buffer_frame;
+    // return a pointer to the updated image buffer
+    return render_buffer;
 }
 
 /***********************************************************************************************************************
@@ -496,7 +490,7 @@ unsigned char *processRotateCCW(register unsigned char *buffer_frame, unsigned w
  * @return
  **********************************************************************************************************************/
 unsigned char *processMirrorX(register unsigned char *buffer_frame, unsigned int width, unsigned int height, int _unused) {
-    register uint8_t *render_buffer = align_temporary_buffer(buffer_frame);
+    register uint8_t *render_buffer = acquire_temporary_buffer(buffer_frame);
 
     unsigned width3 = width * 3;
     unsigned size3 = width * width3;
@@ -517,11 +511,8 @@ unsigned char *processMirrorX(register unsigned char *buffer_frame, unsigned int
         position_render_buffer -= render_buffer_fixup;
     }
 
-    // copy the temporary buffer back to original frame buffer
-    frame_copy(render_buffer, buffer_frame, width * height * 3);
-
     // return a pointer to the updated image buffer
-    return buffer_frame;
+    return render_buffer;
 }
 
 /***********************************************************************************************************************
@@ -532,7 +523,7 @@ unsigned char *processMirrorX(register unsigned char *buffer_frame, unsigned int
  * @return
  **********************************************************************************************************************/
 unsigned char *processMirrorY(register unsigned char *buffer_frame, unsigned width, unsigned height, int _unused) {
-    register uint8_t *render_buffer = align_temporary_buffer(buffer_frame);
+    register uint8_t *render_buffer = acquire_temporary_buffer(buffer_frame);
 
     unsigned width3 = width * 3;
     unsigned size3 = width * width3;
@@ -552,11 +543,8 @@ unsigned char *processMirrorY(register unsigned char *buffer_frame, unsigned wid
         position_render_buffer += width3 + width3;
     }
 
-    // copy the temporary buffer back to original frame buffer
-    frame_copy(render_buffer, buffer_frame, width * height * 3);
-
     // return a pointer to the updated image buffer
-    return buffer_frame;
+    return render_buffer;
 }
 
 /***********************************************************************************************************************
@@ -625,6 +613,7 @@ void implementation_driver(struct kv *sensor_values, int sensor_values_count, un
             frame_buffer = processMirrorY(frame_buffer, width, height, sensor_values[sensorValueIdx].value);
 //            printBMP(width, height, frame_buffer);
         }
+
         processed_frames += 1;
         if (processed_frames % 25 == 0) {
             verifyFrame(frame_buffer, width, height, grading_mode);
