@@ -33,6 +33,8 @@ static inline uint8_t* acquire_temporary_buffer(uint8_t *frame_buffer) {
 }
 
 static inline void frame_copy_unaligned(register uint8_t *src, register uint8_t *dst, register size_t size) {
+    memcpy(dst, src, size);
+    return;
     register size_t offset = 0;
 
     // Copy byte by byte up until the 32-byte alignment
@@ -490,25 +492,20 @@ unsigned char *processRotateCCW(register unsigned char *buffer_frame, unsigned w
  * @return
  **********************************************************************************************************************/
 unsigned char *processMirrorX(register unsigned char *buffer_frame, unsigned int width, unsigned int height, int _unused) {
+     static uint8_t row_buffer[10000 * 3];
+
     register uint8_t *render_buffer = acquire_temporary_buffer(buffer_frame);
 
     unsigned width3 = width * 3;
-    unsigned size3 = width * width3;
-    unsigned render_buffer_fixup = width3 + width3;
+    unsigned size3 = width3 * height;
 
-    int position_render_buffer = size3 - width3;
-    int position_buffer_frame = 0;
-    // store shifted pixels to temporary buffer
+    uint8_t *buffer_frame_start = buffer_frame;
+    uint8_t *render_buffer_start = render_buffer + size3;
     for (int row = 0; row < height; row++) {
-        for (int column = 0; column < width; column++) {
-            *((uint16_t*)&render_buffer[position_render_buffer]) = *((uint16_t*)&buffer_frame[position_buffer_frame]);
-            render_buffer[position_render_buffer + 2] = buffer_frame[position_buffer_frame + 2];
-
-            position_buffer_frame += 3;
-            position_render_buffer += 3;
-        }
-
-        position_render_buffer -= render_buffer_fixup;
+        render_buffer_start -= width3;
+        frame_copy_unaligned(buffer_frame_start, row_buffer, width3);
+        frame_copy_unaligned(row_buffer, render_buffer_start, width3);
+        buffer_frame_start += width3;
     }
 
     // return a pointer to the updated image buffer
