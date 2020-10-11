@@ -521,23 +521,40 @@ unsigned char *processMirrorX(register unsigned char *buffer_frame, unsigned int
  **********************************************************************************************************************/
 unsigned char *processMirrorY(register unsigned char *buffer_frame, unsigned width, unsigned height, int _unused) {
     register uint8_t *render_buffer = acquire_temporary_buffer(buffer_frame);
+    register __m128i shuffle_order = _mm_setr_epi8(12, 13, 14, 9, 10, 11, 6, 7, 8, 3, 4, 5, 0, 1, 2, 15);
 
     unsigned width3 = width * 3;
-    unsigned size3 = width * width3;
+    unsigned render_buffer_fixup = width3 + width3;
 
-    int position_buffer_frame = 0;
-    int position_render_buffer = width3 - 3;
+    unsigned column_limit = width;
+
+    uint8_t *buffer_frame_start = buffer_frame;
+    uint8_t *render_buffer_start = render_buffer + width3 - 15;
     // store shifted pixels to temporary buffer
     for (int row = 0; row < height; row++) {
-        for (int column = 0; column < width; column++) {
-            *((uint16_t*)&render_buffer[position_render_buffer]) = *((uint16_t*)&buffer_frame[position_buffer_frame]);
-            render_buffer[position_render_buffer + 2] = buffer_frame[position_buffer_frame + 2];
+        int column = 0;
 
-            position_buffer_frame += 3;
-            position_render_buffer -= 3;
+        // We will mirror 5 pixels at a time, but we need to fix the 16 byte
+        for (column += 5; column <= column_limit; column += 5) {
+            register __m128i pixels = _mm_loadu_si128((__m128i*) buffer_frame_start);
+            register __m128i mirrored =_mm_shuffle_epi8(pixels, shuffle_order);
+            _mm_storeu_si128((__m128i*) render_buffer_start, mirrored);
+
+            if (row != 0 || column != 5)
+                render_buffer_start[15] = *(buffer_frame_start - 3);
+            buffer_frame_start += 15;
+            render_buffer_start -= 15;
         }
 
-        position_render_buffer += width3 + width3;
+        for (column -= 5; column < width; column++) {
+            render_buffer_start[0] = buffer_frame_start[0];
+            render_buffer_start[1] = buffer_frame_start[1];
+            render_buffer_start[2] = buffer_frame_start[2];
+            render_buffer_start -= 3;
+            buffer_frame_start += 3;
+        }
+        
+        render_buffer_start += render_buffer_fixup;
     }
 
     // return a pointer to the updated image buffer
