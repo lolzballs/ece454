@@ -496,14 +496,13 @@ unsigned char *processMirrorX(register unsigned char *buffer_frame, unsigned int
  **********************************************************************************************************************/
 unsigned char *processMirrorY(register unsigned char *buffer_frame, unsigned width, unsigned height, int _unused) {
     register uint8_t *render_buffer = acquire_temporary_buffer(buffer_frame);
-    memset(render_buffer, 0xFF, width * height * 3);
     register __m128i shuffle_order = _mm_setr_epi8(12, 13, 14, 9, 10, 11, 6, 7, 8, 3, 4, 5, 0, 1, 2, 15);
 
     unsigned width3 = width * 3;
     unsigned render_buffer_fixup = width3 + width3 - 3;
 
-    uint8_t *buffer_frame_start = buffer_frame;
-    uint8_t *render_buffer_start = render_buffer + width3 - 3;
+    register uint8_t *buffer_frame_start = buffer_frame;
+    register uint8_t *render_buffer_start = render_buffer + width3 - 3;
     // store shifted pixels to temporary buffer
     for (int row = 0; row < height; row++) {
         int column = 1;
@@ -519,9 +518,19 @@ unsigned char *processMirrorY(register unsigned char *buffer_frame, unsigned wid
             buffer_frame_start += 15;
             render_buffer_start -= 15;
 
-            register __m128i pixels = _mm_loadu_si128((__m128i*) buffer_frame_start);
-            register __m128i mirrored = _mm_shuffle_epi8(pixels, shuffle_order);
-            _mm_storeu_si128((__m128i*) render_buffer_start, mirrored);
+            asm (
+                ".intel_syntax noprefix;"
+                "vmovdqu xmm0, [%0];"
+                "vpshufb xmm0, xmm0, %2;"
+                "vmovdqu [%1], xmm0;"
+                ".att_syntax;"
+                :
+                : "r" ((__m256i*) buffer_frame_start), "r" ((__m256i*) render_buffer_start), "v" (shuffle_order)
+                : "memory", "xmm0"
+            );
+            // register __m128i pixels = _mm_loadu_si128((__m128i*) buffer_frame_start);
+            // register __m128i mirrored = _mm_shuffle_epi8(pixels, shuffle_order);
+            // _mm_storeu_si128((__m128i*) render_buffer_start, mirrored);
 
             render_buffer_start[15] = *(buffer_frame_start - 3);
         }
