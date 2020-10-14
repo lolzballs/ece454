@@ -481,6 +481,7 @@ unsigned char *processMirrorY(register unsigned char *buffer_frame, unsigned wid
 
     unsigned width3 = width * 3;
     unsigned render_buffer_fixup = width3 + width3 - 3;
+    unsigned column_limit = width - 4;
 
     register uint8_t *buffer_frame_start = buffer_frame;
     register uint8_t *render_buffer_start = render_buffer + width3 - 3;
@@ -492,13 +493,11 @@ unsigned char *processMirrorY(register unsigned char *buffer_frame, unsigned wid
         render_buffer_start[1] = buffer_frame_start[1];
         render_buffer_start[2] = buffer_frame_start[2];
 
-        buffer_frame_start -= 12;
+        buffer_frame_start += 3;
+        render_buffer_start -= 15;
 
         // We will mirror 5 pixels at a time, but we need to fix the 16 byte
-        for (column += 5; column <= width; column += 5) {
-            buffer_frame_start += 15;
-            render_buffer_start -= 15;
-
+        for (; column < column_limit; column += 5) {
             asm (
                 ".intel_syntax noprefix;"
                 "vmovdqu xmm0, [%0];"
@@ -514,19 +513,26 @@ unsigned char *processMirrorY(register unsigned char *buffer_frame, unsigned wid
             // _mm_storeu_si128((__m128i*) render_buffer_start, mirrored);
 
             render_buffer_start[15] = *(buffer_frame_start - 3);
+
+            buffer_frame_start += 15;
+            render_buffer_start -= 15;
         }
 
-        for (column -= 5; column < width; column++) {
-            render_buffer_start -= 3;
-            buffer_frame_start += 3;
+        render_buffer_start += 12;
+
+        for (; column < width; column++) {
             render_buffer_start[0] = buffer_frame_start[0];
             render_buffer_start[1] = buffer_frame_start[1];
             render_buffer_start[2] = buffer_frame_start[2];
+
+            render_buffer_start -= 3;
+            buffer_frame_start += 3;
         }
         
-        render_buffer_start += render_buffer_fixup;
-        buffer_frame_start += 15;
+        render_buffer_start += 2 * width3;
     }
+
+
 
     // return a pointer to the updated image buffer
     return render_buffer;
