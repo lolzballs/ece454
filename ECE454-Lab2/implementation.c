@@ -17,13 +17,15 @@ unsigned char *processMoveUp(unsigned char *buffer_frame, unsigned width, unsign
 unsigned char *processMoveDown(unsigned char *buffer_frame, unsigned width, unsigned height, int offset);
 unsigned char *processMoveLeft(unsigned char *buffer_frame, unsigned width, unsigned height, int offset);
 unsigned char *processMoveRight(unsigned char *buffer_frame, unsigned width, unsigned height, int offset);
-unsigned char *processRotateCW(unsigned char *buffer_frame, unsigned width, unsigned height, int rotate_iteration);
-unsigned char *processRotateCCW(unsigned char *buffer_frame, unsigned width, unsigned height, int rotate_iteration);
-unsigned char *processMirrorX(register unsigned char *buffer_frame, unsigned int width, unsigned int height, int _unused);
-unsigned char *processMirrorY(register unsigned char *buffer_frame, unsigned int width, unsigned int height, int _unused);
+uint8_t *mirror_x(uint8_t *buffer_frame);
+uint8_t *mirror_y(uint8_t *buffer_frame);
 
 uint8_t temporary_buffer1[10000 * 10000 * 3 + sizeof(__m256i) * 2] __attribute__((aligned(32)));
 uint8_t temporary_buffer2[10000 * 10000 * 3 + sizeof(__m256i) * 2] __attribute__((aligned(32)));
+unsigned image_width;
+unsigned image_width3;
+unsigned image_size;
+unsigned image_size3;
 
 static inline uint8_t* acquire_temporary_buffer(uint8_t *frame_buffer) {
     if (frame_buffer == temporary_buffer1) {
@@ -203,116 +205,108 @@ static inline void frame_clear(register uint8_t *dst, register size_t size) {
     // assert(offset == size);
 }
 
-static inline uint8_t* rotate_left(uint8_t *buffer_frame, unsigned width) {
+static inline uint8_t* rotate_left(uint8_t *buffer_frame) {
     uint8_t *render_buffer = acquire_temporary_buffer(buffer_frame);
 
-    int width3 = width * 3;
-    int size = width * width;
-    int size3 = size * 3;
-
-    uint8_t *render_buffer_start = render_buffer + size3 - width3;
+    uint8_t *render_buffer_start = render_buffer + image_size3 - image_width3;
     uint8_t *buffer_frame_start = buffer_frame;
-    for (int row = 0; row < width; row++) {
-        for (int column = 0; column < width; column++) {
+    for (int row = 0; row < image_width; row++) {
+        for (int column = 0; column < image_width; column++) {
             *((uint16_t*) render_buffer_start) = *((uint16_t*)buffer_frame_start);
             render_buffer_start[2] = buffer_frame_start[2];
 
-            render_buffer_start -= width3;
+            render_buffer_start -= image_width3;
             buffer_frame_start += 3;
         }
 
-        render_buffer_start += 3 + size3;
+        render_buffer_start += 3 + image_size3;
     }
 
     return render_buffer;
 }
 
-static inline uint8_t* rotate_right(uint8_t *buffer_frame, unsigned width) {
+static inline uint8_t* rotate_right(uint8_t *buffer_frame) {
     uint8_t *render_buffer = acquire_temporary_buffer(buffer_frame);
 
-    register int width3 = width * 3;
-    int size = width * width;
-    int size3 = size * 3;
+    int column_limit = image_width - 3;
 
-    int column_limit = width - 3;
-
-    register uint8_t *render_buffer_start = render_buffer + width3 - 3;
+    register uint8_t *render_buffer_start = render_buffer + image_width3 - 3;
     register uint8_t *buffer_frame_start = buffer_frame;
-    for (int row = 0; row < width; row++) {
+    for (int row = 0; row < image_width; row++) {
         int column = 0;
 
         for (; column < column_limit; column += 4) {
             *((uint16_t*) render_buffer_start) = *((uint16_t*)buffer_frame_start);
             render_buffer_start[2] = buffer_frame_start[2];
 
-            *((uint16_t*) (render_buffer_start + width3)) = *((uint16_t*)(buffer_frame_start + 3));
-            render_buffer_start[width3 + 2] = buffer_frame_start[5];
+            *((uint16_t*) (render_buffer_start + image_width3)) = *((uint16_t*)(buffer_frame_start + 3));
+            render_buffer_start[image_width3 + 2] = buffer_frame_start[5];
 
-            *((uint16_t*) (render_buffer_start + 2 * width3)) = *((uint16_t*)(buffer_frame_start + 6));
-            render_buffer_start[2 * width3 + 2] = buffer_frame_start[8];
+            *((uint16_t*) (render_buffer_start + 2 * image_width3)) = *((uint16_t*)(buffer_frame_start + 6));
+            render_buffer_start[2 * image_width3 + 2] = buffer_frame_start[8];
 
-            *((uint16_t*) (render_buffer_start + 3 * width3)) = *((uint16_t*)(buffer_frame_start + 9));
-            render_buffer_start[3 * width3 + 2] = buffer_frame_start[11];
+            *((uint16_t*) (render_buffer_start + 3 * image_width3)) = *((uint16_t*)(buffer_frame_start + 9));
+            render_buffer_start[3 * image_width3 + 2] = buffer_frame_start[11];
 
-            render_buffer_start += 4 * width3;
+            render_buffer_start += 4 * image_width3;
             buffer_frame_start += 12;
         }
 
-        for (; column < width; column++) {
+        for (; column < image_width; column++) {
             *((uint16_t*) render_buffer_start) = *((uint16_t*)buffer_frame_start);
             render_buffer_start[2] = buffer_frame_start[2];
 
-            render_buffer_start += width3;
+            render_buffer_start += image_width3;
             buffer_frame_start += 3;
         }
 
-        render_buffer_start -= 3 + size3;
+        render_buffer_start -= 3 + image_size3;
     }
 
     return render_buffer;
 }
 
-static inline uint8_t* rotate_180(uint8_t *buffer_frame, unsigned width) {
-    uint8_t *render_buffer = processMirrorY(buffer_frame, width, width, 0);
-    return processMirrorX(render_buffer, width, width, 0);
+static inline uint8_t* rotate_180(uint8_t *buffer_frame) {
+    uint8_t *render_buffer = mirror_y(buffer_frame);
+    return mirror_x(render_buffer);
 }
 
-static inline uint8_t* translate(uint8_t *buffer_frame, unsigned width, int x, int y) {
+static inline uint8_t* translate(uint8_t *buffer_frame, int x, int y) {
     if (x > 0) {
-        buffer_frame = processMoveRight(buffer_frame, width, width, x);
+        buffer_frame = processMoveRight(buffer_frame, image_width, image_width, x);
     } else if (x < 0) {
-        buffer_frame = processMoveLeft(buffer_frame, width, width, -x);
+        buffer_frame = processMoveLeft(buffer_frame, image_width, image_width, -x);
     }
     if (y > 0) {
-        buffer_frame = processMoveUp(buffer_frame, width, width, y);
+        buffer_frame = processMoveUp(buffer_frame, image_width, image_width, y);
     } else if (y < 0) {
-        buffer_frame = processMoveDown(buffer_frame, width, width, -y);
+        buffer_frame = processMoveDown(buffer_frame, image_width, image_width, -y);
     }
     return buffer_frame;
 }
 
-static inline uint8_t* rotate(uint8_t *buffer_frame, unsigned width, int rot) {
+static inline uint8_t* rotate(uint8_t *buffer_frame, int rot) {
     if (rot < 0) { // CCW
         rot = -rot;
         rot = rot % 4;
 
         if (rot == 3) {
-            return rotate_right(buffer_frame, width);
+            return rotate_right(buffer_frame);
         } else if (rot == 2) {
-            return rotate_180(buffer_frame, width);
+            return rotate_180(buffer_frame);
         } else if (rot == 1) {
-            return rotate_left(buffer_frame, width);
+            return rotate_left(buffer_frame);
         } else {
             return buffer_frame;
         }
     } else { // CW
         rot = rot % 4;
         if (rot == 1) {
-            return rotate_right(buffer_frame, width);
+            return rotate_right(buffer_frame);
         } else if (rot == 2) {
-            return rotate_180(buffer_frame, width);
+            return rotate_180(buffer_frame);
         } else if (rot == 3) {
-            return rotate_left(buffer_frame, width);
+            return rotate_left(buffer_frame);
         } else {
             return buffer_frame;
         }
@@ -320,12 +314,12 @@ static inline uint8_t* rotate(uint8_t *buffer_frame, unsigned width, int rot) {
 }
 
 
-static inline uint8_t* mirror(uint8_t *buffer_frame, unsigned width, int mx, int my) {
+static inline uint8_t* mirror(uint8_t *buffer_frame, int mx, int my) {
     if (mx % 2 == 1) {
-        buffer_frame = processMirrorX(buffer_frame, width, width, 0);
+        buffer_frame = mirror_x(buffer_frame);
     }
     if (my % 2 == 1) {
-        buffer_frame = processMirrorY(buffer_frame, width, width, 0);
+        buffer_frame = mirror_y(buffer_frame);
     }
     return buffer_frame;
 }
@@ -461,106 +455,32 @@ unsigned char *processMoveLeft(register unsigned char *buffer_frame, unsigned wi
     return render_buffer;
 }
 
-/***********************************************************************************************************************
- * @param buffer_frame - pointer pointing to a buffer storing the imported 24-bit bitmap image
- * @param width - width of the imported 24-bit bitmap image
- * @param height - height of the imported 24-bit bitmap image
- * @param rotate_iteration - rotate object inside frame buffer clockwise by 90 degrees, <iteration> times
- * @return - pointer pointing a buffer storing a modified 24-bit bitmap image
- * Note: You can assume the frame will always be square and you will be rotating the entire image
- **********************************************************************************************************************/
-unsigned char *processRotateCW(unsigned char *buffer_frame, unsigned width, unsigned height,
-                               int rotate_iteration) {
-    rotate_iteration = rotate_iteration % 4;
-
-    // handle negative offsets
-    if (rotate_iteration < 0){
-        return processRotateCCW(buffer_frame, width, height, rotate_iteration * -1);
-    }
-
-    if (rotate_iteration == 1) {
-        return rotate_right(buffer_frame, width);
-    } else if (rotate_iteration == 2) {
-        return rotate_180(buffer_frame, width);
-    } else if (rotate_iteration == 3) {
-        return rotate_left(buffer_frame, width);
-    } else {
-        return buffer_frame;
-    }
-}
-
-/***********************************************************************************************************************
- * @param buffer_frame - pointer pointing to a buffer storing the imported 24-bit bitmap image
- * @param width - width of the imported 24-bit bitmap image
- * @param height - height of the imported 24-bit bitmap image
- * @param rotate_iteration - rotate object inside frame buffer counter clockwise by 90 degrees, <iteration> times
- * @return - pointer pointing a buffer storing a modified 24-bit bitmap image
- * Note: You can assume the frame will always be square and you will be rotating the entire image
- **********************************************************************************************************************/
-unsigned char *processRotateCCW(register unsigned char *buffer_frame, unsigned width, unsigned height,
-                                int rotate_iteration) {
-    rotate_iteration = rotate_iteration % 4;
-
-    // handle negative offsets
-    if (rotate_iteration < 0){
-        return processRotateCW(buffer_frame, width, height, rotate_iteration * -1);
-    }
-
-    if (rotate_iteration == 1) {
-        return rotate_left(buffer_frame, width);
-    } else if (rotate_iteration == 2) {
-        return rotate_180(buffer_frame, width);
-    } else if (rotate_iteration == 3) {
-        return rotate_right(buffer_frame, width);
-    } else {
-        return buffer_frame;
-    }
-}
-
-/***********************************************************************************************************************
- * @param buffer_frame - pointer pointing to a buffer storing the imported 24-bit bitmap image
- * @param width - width of the imported 24-bit bitmap image
- * @param height - height of the imported 24-bit bitmap image
- * @param _unused - this field is unused
- * @return
- **********************************************************************************************************************/
-unsigned char *processMirrorX(register unsigned char *buffer_frame, unsigned int width, unsigned int height, int _unused) {
+unsigned char *mirror_x(register unsigned char *buffer_frame) {
     register uint8_t *render_buffer = acquire_temporary_buffer(buffer_frame);
 
-    unsigned width3 = width * 3;
-    unsigned size3 = width3 * height;
-
     uint8_t *buffer_frame_start = buffer_frame;
-    uint8_t *render_buffer_start = render_buffer + size3;
-    for (int row = 0; row < height; row++) {
-        render_buffer_start -= width3;
-        frame_copy_unaligned(buffer_frame_start, render_buffer_start, width3);
-        buffer_frame_start += width3;
+    uint8_t *render_buffer_start = render_buffer + image_size3;
+    for (int row = 0; row < image_width; row++) {
+        render_buffer_start -= image_width3;
+        frame_copy_unaligned(buffer_frame_start, render_buffer_start, image_width3);
+        buffer_frame_start += image_width3;
     }
 
     // return a pointer to the updated image buffer
     return render_buffer;
 }
 
-/***********************************************************************************************************************
- * @param buffer_frame - pointer pointing to a buffer storing the imported 24-bit bitmap image
- * @param width - width of the imported 24-bit bitmap image
- * @param height - height of the imported 24-bit bitmap image
- * @param _unused - this field is unused
- * @return
- **********************************************************************************************************************/
-unsigned char *processMirrorY(register unsigned char *buffer_frame, unsigned width, unsigned height, int _unused) {
+unsigned char *mirror_y(register unsigned char *buffer_frame) {
     register uint8_t *render_buffer = acquire_temporary_buffer(buffer_frame);
     register __m128i shuffle_order = _mm_setr_epi8(12, 13, 14, 9, 10, 11, 6, 7, 8, 3, 4, 5, 0, 1, 2, 15);
 
-    unsigned width3 = width * 3;
-    unsigned render_buffer_fixup = width3 + width3 - 3;
-    unsigned column_limit = width - 4;
+    unsigned render_buffer_fixup = image_width3 + image_width3 - 3;
+    unsigned column_limit = image_width - 4;
 
     register uint8_t *buffer_frame_start = buffer_frame;
-    register uint8_t *render_buffer_start = render_buffer + width3 - 3;
+    register uint8_t *render_buffer_start = render_buffer + image_width3 - 3;
     // store shifted pixels to temporary buffer
-    for (int row = 0; row < height; row++) {
+    for (int row = 0; row < image_width; row++) {
         int column = 1;
 
         render_buffer_start[0] = buffer_frame_start[0];
@@ -594,7 +514,7 @@ unsigned char *processMirrorY(register unsigned char *buffer_frame, unsigned wid
 
         render_buffer_start += 12;
 
-        for (; column < width; column++) {
+        for (; column < image_width; column++) {
             render_buffer_start[0] = buffer_frame_start[0];
             render_buffer_start[1] = buffer_frame_start[1];
             render_buffer_start[2] = buffer_frame_start[2];
@@ -603,10 +523,8 @@ unsigned char *processMirrorY(register unsigned char *buffer_frame, unsigned wid
             buffer_frame_start += 3;
         }
         
-        render_buffer_start += 2 * width3;
+        render_buffer_start += 2 * image_width3;
     }
-
-
 
     // return a pointer to the updated image buffer
     return render_buffer;
@@ -649,6 +567,11 @@ void print_team_info(){
  **********************************************************************************************************************/
 void implementation_driver(struct kv *sensor_values, int sensor_values_count, unsigned char *frame_buffer,
                            unsigned int width, unsigned int height, bool grading_mode) {
+    image_width = width;
+    image_width3 = width * 3;
+    image_size = width * width;
+    image_size3 = width * width * 3;
+
     int state = 0; // 0 - translation, 1 - rotation, 2 - mirrorx, 3 - mirrory
     int next_state = 0; // 4 - verify
     int x = 0;
@@ -659,32 +582,32 @@ void implementation_driver(struct kv *sensor_values, int sensor_values_count, un
     int processed_frames = 0;
     for (int sensorValueIdx = 0; sensorValueIdx < sensor_values_count; sensorValueIdx++) {
         struct kv sensor_value = sensor_values[sensorValueIdx];
-//        printf("Processing sensor value #%d: %s, %d\n", sensorValueIdx, sensor_values[sensorValueIdx].key,
-//               sensor_values[sensorValueIdx].value);
-        if (sensor_value.key[0] == 'W') {
+        char key0 = sensor_value.key[0];
+        char key1 = sensor_value.key[1];
+        if (key0 == 'W') {
             y += sensor_value.value;
             next_state = 0;
-        } else if (sensor_value.key[0] == 'A') {
+        } else if (key0 == 'A') {
             x -= sensor_value.value;
             next_state = 0;
-        } else if (sensor_value.key[0] == 'S') {
+        } else if (key0 == 'S') {
             y -= sensor_value.value;
             next_state = 0;
-        } else if (sensor_value.key[0] == 'D') {
+        } else if (key0 == 'D') {
             x += sensor_value.value;
             next_state = 0;
-        } else if (sensor_value.key[0] == 'C') {
-            if (sensor_value.key[1] == 'W') { // CW
+        } else if (key0 == 'C') {
+            if (key1 == 'W') { // CW
                 rot += sensor_value.value;
-            } else if (sensor_value.key[1] == 'C') { // CCW
+            } else if (key1 == 'C') { // CCW
                 rot -= sensor_value.value;
             }
             next_state = 1;
-        } else if (sensor_value.key[0] == 'M') {
-            if (sensor_value.key[1] == 'X') {
+        } else if (key0 == 'M') {
+            if (key1 == 'X') {
                 mx += 1;
                 next_state = 2;
-            } else if (sensor_value.key[1] == 'Y') {
+            } else if (key1 == 'Y') {
                 my += 1;
                 next_state = 3;
             }
@@ -693,22 +616,22 @@ void implementation_driver(struct kv *sensor_values, int sensor_values_count, un
         processed_frames += 1;
 
         if (state == 0) {
-            frame_buffer = translate(frame_buffer, width, x, y);
+            frame_buffer = translate(frame_buffer, x, y);
             x = 0;
             y = 0;
             state = next_state;
         } else if (next_state != state) {
             if (state == 1) {
-                frame_buffer = rotate(frame_buffer, width, rot);
+                frame_buffer = rotate(frame_buffer, rot);
                 rot = 0;
             } else if (state == 2) {
                 if (mx % 2 == 1) {
-                    frame_buffer = processMirrorX(frame_buffer, width, width, mx);
+                    frame_buffer = mirror_x(frame_buffer);
                 }
                 mx = 0;
             } else if (state == 3) {
                 if (my % 2 == 1) {
-                    frame_buffer = processMirrorY(frame_buffer, width, width, my);
+                    frame_buffer = mirror_y(frame_buffer);
                 }
                 my = 0;
             }
@@ -717,20 +640,20 @@ void implementation_driver(struct kv *sensor_values, int sensor_values_count, un
 
         if (processed_frames % 25 == 0) {
             if (state == 0) {
-                frame_buffer = translate(frame_buffer, width, x, y);
+                frame_buffer = translate(frame_buffer, x, y);
                 x = 0;
                 y = 0;
             } else if (state == 1) {
-                frame_buffer = rotate(frame_buffer, width, rot);
+                frame_buffer = rotate(frame_buffer, rot);
                 rot = 0;
             } else if (state == 2) {
                 if (mx % 2 == 1) {
-                    frame_buffer = processMirrorX(frame_buffer, width, width, mx);
+                    frame_buffer = mirror_x(frame_buffer);
                 }
                 mx = 0;
             } else if (state == 3) {
                 if (my % 2 == 1) {
-                    frame_buffer = processMirrorY(frame_buffer, width, width, my);
+                    frame_buffer = mirror_y(frame_buffer);
                 }
                 my = 0;
             }
