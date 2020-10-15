@@ -572,13 +572,14 @@ void implementation_driver(struct kv *sensor_values, int sensor_values_count, un
     image_size = width * width;
     image_size3 = width * width * 3;
 
-    int state = 0; // 0 - translation, 1 - rotation, 2 - mirrorx, 3 - mirrory
+    int state = 0; // 0 - translation, 1 - rotation, 2 - mirror
     int next_state = 0; // 4 - verify
     int x = 0;
     int y = 0;
     int rot = 0;
     int mx = 0;
     int my = 0;
+
     int processed_frames = 0;
     for (int sensorValueIdx = 0; sensorValueIdx < sensor_values_count; sensorValueIdx++) {
         struct kv sensor_value = sensor_values[sensorValueIdx];
@@ -606,11 +607,10 @@ void implementation_driver(struct kv *sensor_values, int sensor_values_count, un
         } else if (key0 == 'M') {
             if (key1 == 'X') {
                 mx += 1;
-                next_state = 2;
             } else if (key1 == 'Y') {
                 my += 1;
-                next_state = 3;
             }
+            next_state = 2;
         }
 
         processed_frames += 1;
@@ -628,11 +628,10 @@ void implementation_driver(struct kv *sensor_values, int sensor_values_count, un
                 if (mx % 2 == 1) {
                     frame_buffer = mirror_x(frame_buffer);
                 }
-                mx = 0;
-            } else if (state == 3) {
                 if (my % 2 == 1) {
                     frame_buffer = mirror_y(frame_buffer);
                 }
+                mx = 0;
                 my = 0;
             }
             state = next_state;
@@ -650,11 +649,10 @@ void implementation_driver(struct kv *sensor_values, int sensor_values_count, un
                 if (mx % 2 == 1) {
                     frame_buffer = mirror_x(frame_buffer);
                 }
-                mx = 0;
-            } else if (state == 3) {
                 if (my % 2 == 1) {
                     frame_buffer = mirror_y(frame_buffer);
                 }
+                mx = 0;
                 my = 0;
             }
             verifyFrame(frame_buffer, width, height, grading_mode);
