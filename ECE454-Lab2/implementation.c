@@ -12,6 +12,8 @@
 #include <sys/mman.h>
 #include <x86intrin.h>
 
+#define MAX(a, b) ((a > b) ? a : b)
+
 
 unsigned char *processMoveUp(unsigned char *buffer_frame, unsigned width, unsigned height, int offset);
 unsigned char *processMoveDown(unsigned char *buffer_frame, unsigned width, unsigned height, int offset);
@@ -271,18 +273,31 @@ static inline uint8_t* rotate_180(uint8_t *buffer_frame) {
     return mirror_x(render_buffer);
 }
 
-static inline uint8_t* translate(uint8_t *buffer_frame, int x, int y) {
-    if (x > 0) {
-        buffer_frame = processMoveRight(buffer_frame, image_width, image_width, x);
-    } else if (x < 0) {
-        buffer_frame = processMoveLeft(buffer_frame, image_width, image_width, -x);
+static inline uint8_t* translate(uint8_t *buffer_frame, unsigned x, unsigned y, unsigned clip[4]) {
+    uint8_t *render_buffer = acquire_temporary_buffer(buffer_frame);
+    unsigned clipped_height = image_width - clip[0] - clip[1];
+    unsigned clipped_width = image_width - clip[2] - clip[3];
+    unsigned y_start = clip[0] - y;
+    unsigned y_end = y_start + clipped_height;
+    unsigned x_start = clip[2] + x;
+    unsigned x_end = x_end + clipped_width;
+
+    frame_clear(render_buffer, y_start * image_width3);
+
+    uint8_t *render_buffer_start = render_buffer + y_start * image_width3;
+    uint8_t *buffer_frame_start = buffer_frame + clip[0] * image_width3 + clip[2] * 3;
+    for (int row = 0; row < clipped_height; row++) {
+        frame_clear(render_buffer_start, x_start * 3);
+        frame_copy_unaligned(buffer_frame_start, render_buffer_start + x_start * 3, clipped_width * 3);
+        frame_clear(render_buffer_start + x_start * 3 + clipped_width * 3, image_width3 - x_start * 3 - clipped_width * 3);
+
+        render_buffer_start += image_width3;
+        buffer_frame_start += image_width3;
     }
-    if (y > 0) {
-        buffer_frame = processMoveUp(buffer_frame, image_width, image_width, y);
-    } else if (y < 0) {
-        buffer_frame = processMoveDown(buffer_frame, image_width, image_width, -y);
-    }
-    return buffer_frame;
+
+    frame_clear(render_buffer_start, (clip[1] + y) * image_width3);
+
+    return render_buffer;
 }
 
 static inline uint8_t* rotate(uint8_t *buffer_frame, int rot) {
@@ -579,24 +594,46 @@ void implementation_driver(struct kv *sensor_values, int sensor_values_count, un
     int rot = 0;
     int mx = 0;
     int my = 0;
+    unsigned clip[4] = { 0, 0, 0, 0 }; // top bottom left right
 
     int processed_frames = 0;
     for (int sensorValueIdx = 0; sensorValueIdx < sensor_values_count; sensorValueIdx++) {
         struct kv sensor_value = sensor_values[sensorValueIdx];
         char key0 = sensor_value.key[0];
         char key1 = sensor_value.key[1];
+        int val = sensor_value.value;
         if (key0 == 'W') {
-            y += sensor_value.value;
+            y += val;
             next_state = 0;
+            if (y > 0) {
+                clip[0] = MAX(clip[0], y);
+            } else {
+                clip[1] = MAX(clip[1], -y);
+            }
         } else if (key0 == 'A') {
-            x -= sensor_value.value;
+            x -= val;
             next_state = 0;
+            if (x > 0) {
+                clip[3] = MAX(clip[3], x);
+            } else {
+                clip[2] = MAX(clip[2], -x);
+            }
         } else if (key0 == 'S') {
             y -= sensor_value.value;
             next_state = 0;
+            if (y > 0) {
+                clip[0] = MAX(clip[0], y);
+            } else {
+                clip[1] = MAX(clip[1], -y);
+            }
         } else if (key0 == 'D') {
             x += sensor_value.value;
             next_state = 0;
+            if (x > 0) {
+                clip[3] = MAX(clip[3], x);
+            } else {
+                clip[2] = MAX(clip[2], -x);
+            }
         } else if (key0 == 'C') {
             if (key1 == 'W') { // CW
                 rot += sensor_value.value;
@@ -615,13 +652,14 @@ void implementation_driver(struct kv *sensor_values, int sensor_values_count, un
 
         processed_frames += 1;
 
-        if (state == 0) {
-            frame_buffer = translate(frame_buffer, x, y);
-            x = 0;
-            y = 0;
-            state = next_state;
-        } else if (next_state != state) {
-            if (state == 1) {
+        if (next_state != state) {
+            if (state == 0) {
+                frame_buffer = translate(frame_buffer, x, y, clip);
+                x = 0;
+                y = 0;
+                memset(clip, 0, 4 * sizeof(unsigned));
+                state = next_state;
+            } else if (state == 1) {
                 frame_buffer = rotate(frame_buffer, rot);
                 rot = 0;
             } else if (state == 2) {
@@ -639,9 +677,10 @@ void implementation_driver(struct kv *sensor_values, int sensor_values_count, un
 
         if (processed_frames % 25 == 0) {
             if (state == 0) {
-                frame_buffer = translate(frame_buffer, x, y);
+                frame_buffer = translate(frame_buffer, x, y, clip);
                 x = 0;
                 y = 0;
+                memset(clip, 0, 4 * sizeof(unsigned));
             } else if (state == 1) {
                 frame_buffer = rotate(frame_buffer, rot);
                 rot = 0;
