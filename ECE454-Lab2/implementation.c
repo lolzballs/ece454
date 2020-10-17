@@ -50,12 +50,14 @@ void dump_state() {
             image_state.orientation[0], image_state.orientation[1]);
 }
 
-static inline void clear_state() {
+static inline __attribute__((always_inline))
+void clear_state() {
     memset(&image_state, 0, sizeof(image_state));
     image_state.orientation[1] = DIR_RIGHT;
 }
 
-static inline uint32_t opposite_dir(uint32_t dir) {
+static inline __attribute__((always_inline))
+uint32_t opposite_dir(uint32_t dir) {
     if (dir == DIR_TOP) {
         return DIR_BOT;
     } else if (dir == DIR_BOT) {
@@ -67,7 +69,8 @@ static inline uint32_t opposite_dir(uint32_t dir) {
     }
 }
 
-static inline bool is_normal_axis() {
+static inline __attribute__((always_inline))
+bool is_normal_axis() {
     uint32_t up_dir = image_state.orientation[0];
     uint32_t right_dir = image_state.orientation[1];
 
@@ -82,7 +85,8 @@ static inline bool is_normal_axis() {
     }
 }
 
-static inline uint8_t* acquire_temporary_buffer(uint8_t *frame_buffer) {
+static inline __attribute__((always_inline))
+uint8_t* acquire_temporary_buffer(uint8_t *frame_buffer) {
     if (frame_buffer == temporary_buffer1) {
         return temporary_buffer2;
     } else if (frame_buffer == temporary_buffer2) {
