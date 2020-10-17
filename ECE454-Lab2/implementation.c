@@ -13,17 +13,75 @@
 #include <x86intrin.h>
 
 #define MAX(a, b) ((a > b) ? a : b)
+#define MIN(a, b) ((a > b) ? b : a)
 
+#define DIR_TOP 0
+#define DIR_BOT 1
+#define DIR_LEFT 2
+#define DIR_RIGHT 3
 
 uint8_t *mirror_x(uint8_t *buffer_frame);
 uint8_t *mirror_y(uint8_t *buffer_frame);
 
 uint8_t temporary_buffer1[10000 * 10000 * 3 + sizeof(__m256i) * 2] __attribute__((aligned(32)));
 uint8_t temporary_buffer2[10000 * 10000 * 3 + sizeof(__m256i) * 2] __attribute__((aligned(32)));
+
 unsigned image_width;
 unsigned image_width3;
 unsigned image_size;
 unsigned image_size3;
+
+
+struct image_state {
+    // Translation properties
+    int32_t pos[2];
+    int32_t clip[4];
+
+    // transformed [0] top, [2] right
+    // buffer 0 = top, 1 = bottom, 2 = left, 3 = right
+    uint32_t orientation[2];
+};
+
+struct image_state image_state;
+
+void dump_state() {
+    printf("pos: %d %d, clip: %d %d %d %d, orientation: %d %d\n",
+            image_state.pos[0], image_state.pos[1],
+            image_state.clip[0], image_state.clip[1], image_state.clip[2], image_state.clip[3],
+            image_state.orientation[0], image_state.orientation[1]);
+}
+
+static inline void clear_state() {
+    memset(&image_state, 0, sizeof(image_state));
+    image_state.orientation[1] = DIR_RIGHT;
+}
+
+static inline uint32_t opposite_dir(uint32_t dir) {
+    if (dir == DIR_TOP) {
+        return DIR_BOT;
+    } else if (dir == DIR_BOT) {
+        return DIR_TOP;
+    } else if (dir == DIR_LEFT) {
+        return DIR_RIGHT;
+    } else {
+        return DIR_LEFT;
+    }
+}
+
+static inline bool is_normal_axis() {
+    uint32_t up_dir = image_state.orientation[0];
+    uint32_t right_dir = image_state.orientation[1];
+
+    if (up_dir == DIR_TOP) {
+        return right_dir == DIR_RIGHT;
+    } else if (up_dir == DIR_RIGHT) {
+        return right_dir == DIR_BOT;
+    } else if (up_dir == DIR_BOT) {
+        return right_dir == DIR_LEFT;
+    } else {
+        return right_dir == DIR_TOP;
+    }
+}
 
 static inline uint8_t* acquire_temporary_buffer(uint8_t *frame_buffer) {
     if (frame_buffer == temporary_buffer1) {
@@ -226,31 +284,10 @@ static inline uint8_t* rotate_left(uint8_t *buffer_frame) {
 static inline uint8_t* rotate_right(uint8_t *buffer_frame) {
     uint8_t *render_buffer = acquire_temporary_buffer(buffer_frame);
 
-    int column_limit = image_width - 3;
-
     register uint8_t *render_buffer_start = render_buffer + image_width3 - 3;
     register uint8_t *buffer_frame_start = buffer_frame;
     for (int row = 0; row < image_width; row++) {
-        int column = 0;
-
-        for (; column < column_limit; column += 4) {
-            *((uint16_t*) render_buffer_start) = *((uint16_t*)buffer_frame_start);
-            render_buffer_start[2] = buffer_frame_start[2];
-
-            *((uint16_t*) (render_buffer_start + image_width3)) = *((uint16_t*)(buffer_frame_start + 3));
-            render_buffer_start[image_width3 + 2] = buffer_frame_start[5];
-
-            *((uint16_t*) (render_buffer_start + 2 * image_width3)) = *((uint16_t*)(buffer_frame_start + 6));
-            render_buffer_start[2 * image_width3 + 2] = buffer_frame_start[8];
-
-            *((uint16_t*) (render_buffer_start + 3 * image_width3)) = *((uint16_t*)(buffer_frame_start + 9));
-            render_buffer_start[3 * image_width3 + 2] = buffer_frame_start[11];
-
-            render_buffer_start += 4 * image_width3;
-            buffer_frame_start += 12;
-        }
-
-        for (; column < image_width; column++) {
+        for (int column = 0; column < image_width; column++) {
             *((uint16_t*) render_buffer_start) = *((uint16_t*)buffer_frame_start);
             render_buffer_start[2] = buffer_frame_start[2];
 
@@ -269,14 +306,20 @@ static inline uint8_t* rotate_180(uint8_t *buffer_frame) {
     return mirror_x(render_buffer);
 }
 
-static inline uint8_t* translate(uint8_t *buffer_frame, unsigned x, unsigned y, unsigned clip[4]) {
+static inline uint8_t* translate(uint8_t *buffer_frame, unsigned x, unsigned y, int32_t clip[4]) {
     uint8_t *render_buffer = acquire_temporary_buffer(buffer_frame);
     unsigned clipped_height = image_width - clip[0] - clip[1];
     unsigned clipped_width = image_width - clip[2] - clip[3];
-    unsigned y_start = clip[0] - y;
+    int y_start = clip[0] - y;
     unsigned y_end = y_start + clipped_height;
-    unsigned x_start = clip[2] + x;
-    unsigned x_end = x_end + clipped_width;
+    int x_start = clip[2] + x;
+    unsigned x_end = x_start + clipped_width;
+    y_start = MAX(y_start, 0);
+    x_start = MAX(x_start, 0);
+    y_end = MIN(y_end, image_width);
+    x_end = MIN(x_end, image_width);
+    clipped_height = y_end - y_start;
+    clipped_width = x_end - x_start;
 
     frame_clear(render_buffer, y_start * image_width3);
 
@@ -432,6 +475,149 @@ void print_team_info(){
     printf("\tstudent_student_number: %s\n", student_student_number);
 }
 
+
+void queue_mirror(bool y) {
+    if (y) {
+        image_state.orientation[0] = opposite_dir(image_state.orientation[0]);
+    } else {
+        image_state.orientation[1] = opposite_dir(image_state.orientation[1]);
+    }
+}
+
+void queue_rotation(uint32_t cw_iter) {
+    cw_iter = cw_iter % 4;
+
+    uint32_t temp = 0;
+
+    if (cw_iter == 0) {
+        return;
+    } else if (cw_iter == 1) {
+        // top becomes current left
+        // right becomes current top
+        temp = image_state.orientation[0];
+        image_state.orientation[0] = opposite_dir(image_state.orientation[1]);
+        image_state.orientation[1] = temp;
+    } else if (cw_iter == 2) {
+        // top becomes current bottom
+        // right becomes current left
+        image_state.orientation[0] = opposite_dir(image_state.orientation[0]);
+        image_state.orientation[1] = opposite_dir(image_state.orientation[1]);
+    } else if (cw_iter == 3) {
+        // top becomes current right
+        // right becomes current bottom
+        temp = image_state.orientation[0];
+        image_state.orientation[0] = image_state.orientation[1];
+        image_state.orientation[1] = opposite_dir(temp);
+    }
+
+}
+
+int32_t direction_scale[4] = {
+    1, -1, -1, 1
+};
+
+int32_t vert_lookup[4][2] = {
+    { 
+        1, 1,
+    },
+    { 
+        -1, 1,
+    },
+    { 
+        1, 0,
+    },
+    { 
+        -1, 0,
+    },
+};
+
+void queue_translate_vert(int32_t y) {
+    uint32_t up_dir = image_state.orientation[0];
+    uint32_t right_dir = image_state.orientation[1];
+    int32_t *clip = image_state.clip;
+
+    int32_t real_dir = y > 0 ? up_dir : opposite_dir(up_dir);
+
+    int32_t axis = vert_lookup[up_dir][1];
+    int32_t delta = y * direction_scale[up_dir];
+    int32_t pos = image_state.pos[axis] + delta;
+
+    clip[real_dir] = MAX(clip[real_dir], pos * direction_scale[real_dir]);
+
+    image_state.pos[axis] = pos;
+}
+
+int32_t horiz_lookup[4][2] = {
+    { 
+        1, 0,
+    },
+    { 
+        -1, 0,
+    },
+    { 
+        1, 1,
+    },
+    { 
+        -1, 1,
+    },
+};
+
+void queue_translate_horiz(int32_t x) {
+    uint32_t up_dir = image_state.orientation[0];
+    uint32_t right_dir = image_state.orientation[1];
+    int32_t *clip = image_state.clip;
+
+    int32_t real_dir = x > 0 ? right_dir : opposite_dir(right_dir);
+
+    int32_t axis = horiz_lookup[up_dir][1];
+    int32_t delta = x * direction_scale[right_dir];
+    int32_t pos = image_state.pos[axis] + delta;
+
+    clip[real_dir] = MAX(clip[real_dir], pos * direction_scale[real_dir]);
+
+    image_state.pos[axis] = pos;
+}
+
+uint8_t* process_state(uint8_t *frame_buffer) {
+    // translate
+    frame_buffer = translate(frame_buffer, image_state.pos[0], image_state.pos[1], image_state.clip);
+    // decompose rotation and mirror
+    uint32_t top = image_state.orientation[0];
+    uint32_t right = image_state.orientation[1];
+    uint32_t cw_iter = 0;
+    bool mirrorx = false;
+    bool mirrory = false;
+    if (top == DIR_TOP) {
+        // no rotation
+        if (right == DIR_LEFT) {
+            mirrory = true;
+        }
+    } else if (top == DIR_LEFT) {
+        cw_iter = 1;
+        
+        if (right == DIR_BOT) {
+            mirrorx = true;
+        }
+    } else if (top == DIR_RIGHT) {
+        cw_iter = 3;
+
+        if (right == DIR_TOP) {
+            mirrorx = true;
+        }
+    } else if (top == DIR_BOT) {
+        // no rotation
+        mirrorx = true;
+        if (right == DIR_LEFT) {
+            mirrory = true;
+        }
+    }
+    frame_buffer = mirror(frame_buffer, mirrorx, mirrory);
+    frame_buffer = rotate(frame_buffer, cw_iter);
+
+    clear_state();
+    return frame_buffer;
+}
+
 /***********************************************************************************************************************
  * WARNING: Do not modify the implementation_driver and team info prototype (name, parameter, return value) !!!
  *          You can modify anything else in this file
@@ -452,14 +638,7 @@ void implementation_driver(struct kv *sensor_values, int sensor_values_count, un
     image_size = width * width;
     image_size3 = width * width * 3;
 
-    int state = 0; // 0 - translation, 1 - rotation, 2 - mirror
-    int next_state = 0; // 4 - verify
-    int x = 0;
-    int y = 0;
-    int rot = 0;
-    int mx = 0;
-    int my = 0;
-    unsigned clip[4] = { 0, 0, 0, 0 }; // top bottom left right
+    clear_state();
 
     int processed_frames = 0;
     for (int sensorValueIdx = 0; sensorValueIdx < sensor_values_count; sensorValueIdx++) {
@@ -468,97 +647,33 @@ void implementation_driver(struct kv *sensor_values, int sensor_values_count, un
         char key1 = sensor_value.key[1];
         int val = sensor_value.value;
         if (key0 == 'W') {
-            y += val;
-            next_state = 0;
-            if (y > 0) {
-                clip[0] = MAX(clip[0], y);
-            } else {
-                clip[1] = MAX(clip[1], -y);
-            }
+            queue_translate_vert(val);
         } else if (key0 == 'A') {
-            x -= val;
-            next_state = 0;
-            if (x > 0) {
-                clip[3] = MAX(clip[3], x);
-            } else {
-                clip[2] = MAX(clip[2], -x);
-            }
+            queue_translate_horiz(-val);
         } else if (key0 == 'S') {
-            y -= sensor_value.value;
-            next_state = 0;
-            if (y > 0) {
-                clip[0] = MAX(clip[0], y);
-            } else {
-                clip[1] = MAX(clip[1], -y);
-            }
+            queue_translate_vert(-val);
         } else if (key0 == 'D') {
-            x += sensor_value.value;
-            next_state = 0;
-            if (x > 0) {
-                clip[3] = MAX(clip[3], x);
-            } else {
-                clip[2] = MAX(clip[2], -x);
-            }
+            queue_translate_horiz(val);
         } else if (key0 == 'C') {
             if (key1 == 'W') { // CW
-                rot += sensor_value.value;
+                if (val < 0)
+                    queue_rotation(-val * 3);
+                else
+                    queue_rotation(val);
             } else if (key1 == 'C') { // CCW
-                rot -= sensor_value.value;
+                if (val < 0)
+                    queue_rotation(-val);
+                else
+                    queue_rotation(val * 3);
             }
-            next_state = 1;
         } else if (key0 == 'M') {
-            if (key1 == 'X') {
-                mx += 1;
-            } else if (key1 == 'Y') {
-                my += 1;
-            }
-            next_state = 2;
+            queue_mirror(key1 == 'X');
         }
 
         processed_frames += 1;
 
-        if (next_state != state) {
-            if (state == 0) {
-                frame_buffer = translate(frame_buffer, x, y, clip);
-                x = 0;
-                y = 0;
-                memset(clip, 0, 4 * sizeof(unsigned));
-                state = next_state;
-            } else if (state == 1) {
-                frame_buffer = rotate(frame_buffer, rot);
-                rot = 0;
-            } else if (state == 2) {
-                if (mx % 2 == 1) {
-                    frame_buffer = mirror_x(frame_buffer);
-                }
-                if (my % 2 == 1) {
-                    frame_buffer = mirror_y(frame_buffer);
-                }
-                mx = 0;
-                my = 0;
-            }
-            state = next_state;
-        }
-
         if (processed_frames % 25 == 0) {
-            if (state == 0) {
-                frame_buffer = translate(frame_buffer, x, y, clip);
-                x = 0;
-                y = 0;
-                memset(clip, 0, 4 * sizeof(unsigned));
-            } else if (state == 1) {
-                frame_buffer = rotate(frame_buffer, rot);
-                rot = 0;
-            } else if (state == 2) {
-                if (mx % 2 == 1) {
-                    frame_buffer = mirror_x(frame_buffer);
-                }
-                if (my % 2 == 1) {
-                    frame_buffer = mirror_y(frame_buffer);
-                }
-                mx = 0;
-                my = 0;
-            }
+            frame_buffer = process_state(frame_buffer);
             verifyFrame(frame_buffer, width, height, grading_mode);
         }
     }
