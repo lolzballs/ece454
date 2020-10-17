@@ -95,7 +95,10 @@ uint8_t* acquire_temporary_buffer(uint8_t *frame_buffer) {
     return temporary_buffer1;
 }
 
-static inline void frame_copy_unaligned(register uint8_t *src, register uint8_t *dst, register size_t size) {
+static inline __attribute__((always_inline))
+void frame_copy_unaligned(register uint8_t *src, register uint8_t *dst, register size_t size) {
+    memcpy(dst, src, size);
+    return;
     register size_t offset = 0;
 
     // Copy byte by byte up until the 32-byte alignment
@@ -158,7 +161,10 @@ static inline void frame_copy_unaligned(register uint8_t *src, register uint8_t 
     // assert(offset == size);
 }
 
-static inline void frame_clear(register uint8_t *dst, register size_t size) {
+static inline __attribute__((always_inline))
+void frame_clear(register uint8_t *dst, register size_t size) {
+    memset(dst, 0xFF, size);
+    return;
     register size_t offset;
 
     register __m256i *dst_vect = (__m256i*) dst;
@@ -254,14 +260,19 @@ static inline uint8_t* translate(uint8_t *buffer_frame, unsigned x, unsigned y, 
     clipped_height = y_end - y_start;
     clipped_width = x_end - x_start;
 
+    unsigned x_start3 = x_start * 3;
+    unsigned clipped_width3 = clipped_width * 3;
+    unsigned x_post3 = x_start3 + clipped_width3;
+    unsigned x_remaining3 = image_width3 - clipped_width3 - x_start3;
+
     frame_clear(render_buffer, y_start * image_width3);
 
     uint8_t *render_buffer_start = render_buffer + y_start * image_width3;
     uint8_t *buffer_frame_start = buffer_frame + clip[0] * image_width3 + clip[2] * 3;
     for (int row = 0; row < clipped_height; row++) {
-        frame_clear(render_buffer_start, x_start * 3);
-        frame_copy_unaligned(buffer_frame_start, render_buffer_start + x_start * 3, clipped_width * 3);
-        frame_clear(render_buffer_start + x_start * 3 + clipped_width * 3, image_width3 - x_start * 3 - clipped_width * 3);
+        frame_clear(render_buffer_start, x_start3);
+        frame_copy_unaligned(buffer_frame_start, render_buffer_start + x_start3, clipped_width3);
+        frame_clear(render_buffer_start + x_post3, x_remaining3);
 
         render_buffer_start += image_width3;
         buffer_frame_start += image_width3;
