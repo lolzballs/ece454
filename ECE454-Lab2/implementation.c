@@ -96,8 +96,6 @@ uint8_t* acquire_temporary_buffer(uint8_t *frame_buffer) {
 }
 
 static inline void frame_copy_unaligned(register uint8_t *src, register uint8_t *dst, register size_t size) {
-    memcpy(dst, src, size);
-    return;
     register size_t offset = 0;
 
     // Copy byte by byte up until the 32-byte alignment
@@ -125,74 +123,6 @@ static inline void frame_copy_unaligned(register uint8_t *src, register uint8_t 
                 : "r" (src_vect), "r" (dst_vect)
                 : "memory", "ymm0"
             );
-
-        offset += sizeof(__m256i);
-        src_vect += 1;
-        dst_vect += 1;
-    }
-    // offset will be 32 bytes ahead of the last copied value
-    offset -= sizeof(__m256i);
-    
-    // Copy as many dwords as possible
-    register uint32_t *src_dwords = (uint32_t*) (src + offset);
-    register uint32_t *dst_dwords = (uint32_t*) (dst + offset);
-    offset += sizeof(uint32_t);
-    while (offset <= size) { // equality occurs when there are exactly 4 bytes left to copy
-        *dst_dwords = *src_dwords;
-
-        offset += sizeof(uint32_t);
-        src_dwords += 1;
-        dst_dwords += 1;
-    }
-    offset -= sizeof(uint32_t);
-
-    // Copy remaining bytes
-    src_bytes = (uint8_t*) (src + offset);
-    dst_bytes = (uint8_t*) (dst + offset);
-    while (offset < size) {
-        *dst_bytes = *src_bytes;
-
-        offset += sizeof(uint8_t);
-        src_bytes += 1;
-        dst_bytes += 1;
-    }
-
-    // assert(offset == size);
-}
-
-
-// src, dst mod 32 must be equal
-static inline void frame_copy(register uint8_t *src, register uint8_t *dst, register size_t size) {
-    register size_t offset = 0;
-
-    // assert((size_t) src % 32 == (size_t) dst % 32);
-
-    // Copy byte by byte up until the 32-byte alignment
-    register uint8_t *src_bytes = (uint8_t*) (src);
-    register uint8_t *dst_bytes = (uint8_t*) (dst);
-    while ((size_t) src_bytes % 32 != 0) {
-        *dst_bytes = *src_bytes;
-
-        offset += sizeof(uint8_t);
-        src_bytes += 1;
-        dst_bytes += 1;
-    }
-
-    // Copy all 256 bits possible
-    register __m256i *src_vect = (__m256i*) (src + offset);
-    register __m256i *dst_vect = (__m256i*) (dst + offset);
-    offset += sizeof(__m256i);
-    while (offset <= size) { // equality occurs when there are exactly 32 bytes left to copy
-        asm (
-                ".intel_syntax noprefix;"
-                "vmovdqa ymm0, [%0];"
-                "vmovntdq [%1], ymm0;"
-                ".att_syntax;"
-                :
-                : "r" (src_vect), "r" (dst_vect)
-                : "memory", "ymm0"
-            );
-        // _mm256_stream_si256(dst_vect, *src_vect);
 
         offset += sizeof(__m256i);
         src_vect += 1;
