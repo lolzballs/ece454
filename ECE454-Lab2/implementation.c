@@ -31,7 +31,6 @@ unsigned image_width3;
 unsigned image_size;
 unsigned image_size3;
 
-
 struct image_state {
     // Translation properties
     int32_t pos[2];
@@ -339,45 +338,6 @@ static inline uint8_t* translate(uint8_t *buffer_frame, unsigned x, unsigned y, 
     return render_buffer;
 }
 
-static inline uint8_t* rotate(uint8_t *buffer_frame, int rot) {
-    if (rot < 0) { // CCW
-        rot = -rot;
-        rot = rot % 4;
-
-        if (rot == 3) {
-            return rotate_right(buffer_frame);
-        } else if (rot == 2) {
-            return rotate_180(buffer_frame);
-        } else if (rot == 1) {
-            return rotate_left(buffer_frame);
-        } else {
-            return buffer_frame;
-        }
-    } else { // CW
-        rot = rot % 4;
-        if (rot == 1) {
-            return rotate_right(buffer_frame);
-        } else if (rot == 2) {
-            return rotate_180(buffer_frame);
-        } else if (rot == 3) {
-            return rotate_left(buffer_frame);
-        } else {
-            return buffer_frame;
-        }
-    }
-}
-
-
-static inline uint8_t* mirror(uint8_t *buffer_frame, int mx, int my) {
-    if (mx % 2 == 1) {
-        buffer_frame = mirror_x(buffer_frame);
-    }
-    if (my % 2 == 1) {
-        buffer_frame = mirror_y(buffer_frame);
-    }
-    return buffer_frame;
-}
-
 unsigned char *mirror_x(register unsigned char *buffer_frame) {
     register uint8_t *render_buffer = acquire_temporary_buffer(buffer_frame);
 
@@ -611,8 +571,20 @@ uint8_t* process_state(uint8_t *frame_buffer) {
             mirrory = true;
         }
     }
-    frame_buffer = mirror(frame_buffer, mirrorx, mirrory);
-    frame_buffer = rotate(frame_buffer, cw_iter);
+    if (mirrorx) {
+        frame_buffer = mirror_x(frame_buffer);
+    }
+    if (mirrory) {
+        frame_buffer = mirror_y(frame_buffer);
+    }
+    if (cw_iter == 1) {
+        frame_buffer = rotate_right(frame_buffer);
+    } else if (cw_iter == 2) {
+        frame_buffer = rotate_180(frame_buffer);
+    } else if (cw_iter == 3) {
+        frame_buffer = rotate_left(frame_buffer);
+    }
+
 
     clear_state();
     return frame_buffer;
