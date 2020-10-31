@@ -50,8 +50,8 @@ team_t team = {
 #define PACK(size, alloc) ((size) | (alloc))
 
 /* Read and write a word at address p */
-#define GET(p)          (*(uintptr_t *)(p))
-#define PUT(p,val)      (*(uintptr_t *)(p) = (val))
+#define GET(p)          (*(uint64_t *)(p))
+#define PUT(p,val)      (*(uint64_t *)(p) = (val))
 
 /* Read the size and allocated fields from address p */
 #define GET_SIZE(p)     (GET(p) & ~(DSIZE - 1))
@@ -66,8 +66,8 @@ team_t team = {
 #define PREV_BLKP(bp) ((char *)(bp) - GET_SIZE(((char *)(bp) - DSIZE)))
 
 // Given free block ptr bp, get next and prev ptr address
-#define NEXT_FREE_BLKP(bp) (bp)
-#define PREV_FREE_BLKP(bp) (bp + WSIZE)
+#define NEXT_FREE_BLKP(bp) ((uint8_t*) (bp))
+#define PREV_FREE_BLKP(bp) ((uint8_t*) (bp) + WSIZE)
 
 uint8_t *heap_list; // free list root
 uint8_t *heap_top;
@@ -157,9 +157,9 @@ uint8_t *extend_heap(uint64_t words) {
         block = prev_contig - pc_size;
 
         // Need to stop the prev free block from pointing to this block
-        uint8_t *prev_free = GET(PREV_FREE_BLKP(block));
+        uint64_t *prev_free = (uint64_t*) GET(PREV_FREE_BLKP(block));
         if (prev_free != NULL) {
-            PUT(NEXT_FREE_BLKP(prev_free), NULL);
+            PUT(NEXT_FREE_BLKP(prev_free), (uint64_t) NULL);
         }
 
         PUT(HDRP(block), PACK(comb_size, 1)); // block header
@@ -193,7 +193,7 @@ uint8_t *find_fit(uint64_t req_size) {
         }
 
         // TODO: Not validated yet
-        cur = GET(NEXT_FREE_BLKP(cur));
+        cur = (uint8_t*) GET(NEXT_FREE_BLKP(cur));
     }
 
     return NULL;
@@ -212,27 +212,28 @@ void place(uint8_t *bp, uint64_t size) {
     PUT(FTRP(bp), PACK(bsize, 1));
 
     // Remove this block from the free list
-    uint8_t *next = GET(NEXT_FREE_BLKP(bp));
-    uint8_t *prev = GET(PREV_FREE_BLKP(bp));
+    uint64_t *next = (uint64_t*) GET(NEXT_FREE_BLKP(bp));
+    uint64_t *prev = (uint64_t*) GET(PREV_FREE_BLKP(bp));
     if (next != NULL)
-        PUT(PREV_FREE_BLKP(next), prev); // Fix prev pointer of next block
+        PUT(PREV_FREE_BLKP(next), (uint64_t) prev); // Fix prev pointer of next block
     if (prev != NULL)
-        PUT(NEXT_FREE_BLKP(prev), next); // Fix next pointer of prev block
+        PUT(NEXT_FREE_BLKP(prev), (uint64_t) next); // Fix next pointer of prev block
 }
 
 /**********************************************************
  * mm_free
  * Free the block and coalesce with neighbouring blocks
  **********************************************************/
-void mm_free(void *bp)
-{
-    if(bp == NULL){
-      return;
+void mm_free(void *bp) {
+    if (bp == NULL) {
+        return;
     }
-    size_t size = GET_SIZE(HDRP(bp));
+
+    uint64_t size = GET_SIZE(HDRP(bp));
     PUT(HDRP(bp), PACK(size,0));
     PUT(FTRP(bp), PACK(size,0));
-    coalesce(bp);
+
+    // TODO: Coalescing
 }
 
 
