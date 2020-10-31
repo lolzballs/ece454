@@ -8,6 +8,7 @@
  * NOTE TO STUDENTS: Replace this header comment with your own header
  * comment that gives a high level description of your solution.
  */
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -64,22 +65,25 @@ team_t team = {
 #define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE(((char *)(bp) - WSIZE)))
 #define PREV_BLKP(bp) ((char *)(bp) - GET_SIZE(((char *)(bp) - DSIZE)))
 
-void* heap_listp = NULL;
+// Given free block ptr bp, get next and prev ptr address
+#define NEXT_FREE_BLKP(bp) (bp)
+#define PREV_FREE_BLKP(bp) (bp + WSIZE)
+
+uint8_t *heap_list; // free list root
+uint8_t *heap_top;
 
 /**********************************************************
  * mm_init
  * Initialize the heap, including "allocation" of the
  * prologue and epilogue
  **********************************************************/
- int mm_init(void)
- {
-   if ((heap_listp = mem_sbrk(4*WSIZE)) == (void *)-1)
+ int mm_init(void) {
+     if ((heap_top = mem_sbrk(4*WSIZE)) == (void *)-1)
          return -1;
-     PUT(heap_listp, 0);                         // alignment padding
-     PUT(heap_listp + (1 * WSIZE), PACK(DSIZE, 1));   // prologue header
-     PUT(heap_listp + (2 * WSIZE), PACK(DSIZE, 1));   // prologue footer
-     PUT(heap_listp + (3 * WSIZE), PACK(0, 1));    // epilogue header
-     heap_listp += DSIZE;
+     PUT(heap_top, 0);                         // alignment padding
+     PUT(heap_top + (1 * WSIZE), PACK(0, 1));   // prologue header
+     PUT(heap_top + (2 * WSIZE), PACK(0, 1));   // prologue footer
+     PUT(heap_top + (3 * WSIZE), PACK(0, 1));    // epilogue header
 
      return 0;
  }
@@ -131,23 +135,46 @@ void *coalesce(void *bp)
  * requirements of course. Free the former epilogue block
  * and reallocate its new header
  **********************************************************/
-void *extend_heap(size_t words)
-{
-    char *bp;
-    size_t size;
-
+uint8_t *extend_heap(uint64_t words) {
     /* Allocate an even number of words to maintain alignments */
-    size = (words % 2) ? (words+1) * WSIZE : words * WSIZE;
-    if ( (bp = mem_sbrk(size)) == (void *)-1 )
+    uint64_t size = (words % 2) ? (words+1) * WSIZE : words * WSIZE;
+    uint8_t *block = mem_sbrk(size);
+    if (block == (uint8_t*) -1)
         return NULL;
 
-    /* Initialize free block header/footer and the epilogue header */
-    PUT(HDRP(bp), PACK(size, 0));                // free block header
-    PUT(FTRP(bp), PACK(size, 0));                // free block footer
-    PUT(HDRP(NEXT_BLKP(bp)), PACK(0, 1));        // new epilogue header
+    // Assume that if previous block is free, the block before it is not
+    // i.e. the original free block was coalesced
+    uint8_t *prev_contig = block - 2 * WSIZE;
 
-    /* Coalesce if the previous block was free */
-    return coalesce(bp);
+    // check flag from highest addressed block from before sbrk'ing
+    bool coalescable = !GET_ALLOC(prev_contig);
+
+    if (coalescable) {
+        // TODO: Not validated yet
+        uint64_t pc_size = GET_SIZE(prev_contig);
+        uint64_t comb_size = pc_size + size;
+
+        block = prev_contig - pc_size;
+
+        // Need to stop the prev free block from pointing to this block
+        uint8_t *prev_free = GET(PREV_FREE_BLKP(block));
+        if (prev_free != NULL) {
+            PUT(NEXT_FREE_BLKP(prev_free), NULL);
+        }
+
+        PUT(HDRP(block), PACK(comb_size, 1)); // block header
+        PUT(FTRP(block), PACK(comb_size, 1)); // block footer
+        PUT(HDRP(NEXT_BLKP(block)), PACK(0, 1)); // new epi header
+
+        return block;
+    }
+    
+    /* Initialize free block header/footer and the epilogue header */
+    PUT(HDRP(block), PACK(size, 1));                // block header, overwrites old epilogue
+    PUT(FTRP(block), PACK(size, 1));                // block footer
+    PUT(HDRP(NEXT_BLKP(block)), PACK(0, 1));        // new epilogue header
+
+    return block;
 }
 
 
@@ -157,16 +184,18 @@ void *extend_heap(size_t words)
  * Return NULL if no free blocks can handle that size
  * Assumed that asize is aligned
  **********************************************************/
-void * find_fit(size_t asize)
-{
-    void *bp;
-    for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp))
-    {
-        if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp))))
-        {
-            return bp;
+uint8_t *find_fit(uint64_t req_size) {
+    uint8_t *cur = heap_list;
+    while (cur != NULL) {
+        uint64_t size = GET(HDRP(cur)); // GET is equivalent to GET_SIZE since alloc bit is zero
+        if (req_size <= size) {
+            return cur;
         }
+
+        // TODO: Not validated yet
+        cur = GET(NEXT_FREE_BLKP(cur));
     }
+
     return NULL;
 }
 
@@ -174,13 +203,21 @@ void * find_fit(size_t asize)
  * place
  * Mark the block as allocated
  **********************************************************/
-void place(void* bp, size_t asize)
-{
-  /* Get the current block size */
-  size_t bsize = GET_SIZE(HDRP(bp));
+void place(uint8_t *bp, uint64_t size) {
+    /* Get the current block size */
+    uint64_t bsize = GET_SIZE(HDRP(bp));
+    // TODO: Add splitting
+0x30
+    PUT(HDRP(bp), PACK(bsize, 1));
+    PUT(FTRP(bp), PACK(bsize, 1));
 
-  PUT(HDRP(bp), PACK(bsize, 1));
-  PUT(FTRP(bp), PACK(bsize, 1));
+    // Remove this block from the free list
+    uint8_t *next = GET(NEXT_FREE_BLKP(bp));
+    uint8_t *prev = GET(PREV_FREE_BLKP(bp));
+    if (next != NULL)
+        PUT(PREV_FREE_BLKP(next), prev); // Fix prev pointer of next block
+    if (prev != NULL)
+        PUT(NEXT_FREE_BLKP(prev), next); // Fix next pointer of prev block
 }
 
 /**********************************************************
@@ -207,35 +244,34 @@ void mm_free(void *bp)
  *   in place(..)
  * If no block satisfies the request, the heap is extended
  **********************************************************/
-void *mm_malloc(size_t size)
+void *mm_malloc(size_t req_size)
 {
-    size_t asize; /* adjusted block size */
-    size_t extendsize; /* amount to extend heap if no fit */
-    char * bp;
+    uint64_t adj_size; /* adjusted block size */
+    uint64_t ext_size; /* amount to extend heap if no fit */
+    uint8_t *block;
 
     /* Ignore spurious requests */
-    if (size == 0)
+    if (req_size == 0)
         return NULL;
 
     /* Adjust block size to include overhead and alignment reqs. */
-    if (size <= DSIZE)
-        asize = 2 * DSIZE;
+    if (req_size <= DSIZE)
+        adj_size = 2 * DSIZE;
     else
-        asize = DSIZE * ((size + (DSIZE) + (DSIZE-1))/ DSIZE);
+        adj_size = DSIZE * ((req_size + (DSIZE) + (DSIZE-1))/ DSIZE);
 
     /* Search the free list for a fit */
-    if ((bp = find_fit(asize)) != NULL) {
-        place(bp, asize);
-        return bp;
+    if ((block = find_fit(adj_size)) != NULL) {
+        place(block, adj_size);
+        return block;
     }
 
     /* No fit found. Get more memory and place the block */
-    extendsize = MAX(asize, CHUNKSIZE);
-    if ((bp = extend_heap(extendsize/WSIZE)) == NULL)
+    ext_size = MAX(adj_size, CHUNKSIZE);
+    if ((block = extend_heap(ext_size/WSIZE)) == NULL)
         return NULL;
-    place(bp, asize);
-    return bp;
 
+    return block;
 }
 
 /**********************************************************
