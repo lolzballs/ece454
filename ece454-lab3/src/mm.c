@@ -207,7 +207,7 @@ void place(uint8_t *bp, uint64_t size) {
     /* Get the current block size */
     uint64_t bsize = GET_SIZE(HDRP(bp));
     // TODO: Add splitting
-0x30
+
     PUT(HDRP(bp), PACK(bsize, 1));
     PUT(FTRP(bp), PACK(bsize, 1));
 
