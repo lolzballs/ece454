@@ -90,6 +90,34 @@ uint8_t *heap_top;
      return 0;
  }
 
+// splits a free block into two,
+// allocating the block starting at block.
+void split_alloc(uint64_t *block_a, uint64_t size_a) {
+    uint64_t comb_size = GET_SIZE(HDRP(block_a));
+    uint64_t size_b = comb_size - size_a - DSIZE;
+
+    uint64_t *next = (uint64_t*) GET(NEXT_FREE_BLKP(block_a));
+    uint64_t *prev = (uint64_t*) GET(PREV_FREE_BLKP(block_a));
+
+    PUT(HDRP(block_a), PACK(size_a, 1));
+    PUT(FTRP(block_a), PACK(size_a, 1));
+
+    uint64_t *block_b = (uint64_t*) NEXT_BLKP(block_a);
+    PUT(HDRP(block_b), PACK(size_b, 0));
+    PUT(FTRP(block_b), PACK(size_b, 0));
+
+    // orig: prev -> block_a -> next
+    // want: prev -> block_b -> next
+    if (prev != NULL)
+        PUT(NEXT_FREE_BLKP(prev), (uint64_t) block_b);
+    else
+        heap_list = (uint8_t*) block_b;
+    PUT(PREV_FREE_BLKP(block_b), (uint64_t) prev);
+    PUT(NEXT_FREE_BLKP(block_b), (uint64_t) next);
+    if (next != NULL)
+        PUT(PREV_FREE_BLKP(next), (uint64_t) block_b);
+}
+
 /**********************************************************
  * extend_heap
  * Extend the heap by "words" words, maintaining alignment
@@ -169,7 +197,10 @@ uint8_t *find_fit(uint64_t req_size) {
 void place(uint8_t *bp, uint64_t size) {
     /* Get the current block size */
     uint64_t bsize = GET_SIZE(HDRP(bp));
-    // TODO: Add splitting
+    if (bsize - size > CHUNKSIZE) {
+        split_alloc((uint64_t*) bp, size);
+        return;
+    }
 
     PUT(HDRP(bp), PACK(bsize, 1));
     PUT(FTRP(bp), PACK(bsize, 1));
