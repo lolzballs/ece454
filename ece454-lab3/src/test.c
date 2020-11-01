@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <stdlib.h>
 
 #include "mm.h"
@@ -9,13 +10,19 @@ int main() {
 
     void *a = mm_malloc(10);
     void *b = mm_malloc(10);
-    mm_free(b);
     void *c = mm_malloc(10);
     void *d = mm_malloc(10);
-    mm_free(d);
     void *e = mm_malloc(10);
+
+    mm_free(b);
     mm_free(a);
-    void *f = mm_malloc(10);
+
+    assert(mm_check());
+
+    mm_free(d);
+
     mm_free(c);
+
+    assert(mm_check());
 }
 

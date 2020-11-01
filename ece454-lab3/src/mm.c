@@ -257,14 +257,82 @@ void mm_free(void *bp) {
 
     assert(mm_check());
 
-    // unset alloc bit
     uint64_t size = GET_SIZE(HDRP(bp));
-    PUT(HDRP(bp), PACK(size,0));
-    PUT(FTRP(bp), PACK(size,0));
+    // check next contiguous block for coalescing
+    uint64_t *nc_block = bp + size + DSIZE;
+    bool coalesce_next = !GET_ALLOC(HDRP(nc_block));
+    // check prev contiguous block for coalescing
+    uint64_t *pc_block = bp - DSIZE - GET_SIZE(bp - DSIZE);
+    bool coalesce_prev = !GET_ALLOC(HDRP(pc_block));
 
-    insert_free(bp);
+    if (coalesce_next && coalesce_prev) {
+        uint64_t pc_size = GET_SIZE(HDRP(pc_block));
+        uint64_t nc_size = GET_SIZE(HDRP(nc_block));
+        size += pc_size + nc_size + 2 * DSIZE;
 
-    // TODO: Coalescing
+        // update size in header and footer
+        PUT(HDRP(pc_block), PACK(size,0));
+        PUT(FTRP(pc_block), PACK(size,0));
+
+        uint64_t *prev = (uint64_t*) GET(PREV_FREE_BLKP(pc_block));
+        uint64_t *next = (uint64_t*) GET(NEXT_FREE_BLKP(nc_block));
+        // orig: prev -> pc -> nc -> next
+        // want: prev -> big -> next
+        if (prev != NULL)
+            PUT(NEXT_FREE_BLKP(prev), (uint64_t) pc_block);
+        else
+            heap_list = (uint8_t*) pc_block;
+        PUT(PREV_FREE_BLKP(pc_block), (uint64_t) prev);
+        PUT(NEXT_FREE_BLKP(pc_block), (uint64_t) next);
+        if (next != NULL)
+            PUT(PREV_FREE_BLKP(next), (uint64_t) pc_block);
+    } else if (coalesce_next) {
+        uint64_t nc_size = GET_SIZE(HDRP(nc_block));
+        size += nc_size + DSIZE;
+
+        // update size in header and footer
+        PUT(HDRP(bp), PACK(size,0));
+        PUT(FTRP(bp), PACK(size,0));
+
+        uint64_t *prev = (uint64_t*) GET(PREV_FREE_BLKP(nc_block));
+        uint64_t *next = (uint64_t*) GET(NEXT_FREE_BLKP(nc_block));
+        // orig: prev -> nc -> next
+        // want: pc -> big -> next
+        if (prev != NULL)
+            PUT(NEXT_FREE_BLKP(prev), (uint64_t) bp);
+        else
+            heap_list = (uint8_t*) bp;
+        PUT(PREV_FREE_BLKP(bp), (uint64_t) prev);
+        PUT(NEXT_FREE_BLKP(bp), (uint64_t) next);
+        if (next != NULL)
+            PUT(PREV_FREE_BLKP(next), (uint64_t) bp);
+    } else if (coalesce_prev) {
+        uint64_t pc_size = GET_SIZE(HDRP(pc_block));
+        size += pc_size + DSIZE;
+
+        // update size in header and footer
+        PUT(HDRP(pc_block), PACK(size,0));
+        PUT(FTRP(pc_block), PACK(size,0));
+
+        uint64_t *prev = (uint64_t*) GET(PREV_FREE_BLKP(pc_block));
+        uint64_t *next = (uint64_t*) GET(NEXT_FREE_BLKP(pc_block));
+        // orig: prev -> pc -> next
+        // want: prev -> big -> next
+        if (prev != NULL)
+            PUT(NEXT_FREE_BLKP(prev), (uint64_t) pc_block);
+        else
+            heap_list = (uint8_t*) pc_block;
+        PUT(PREV_FREE_BLKP(pc_block), (uint64_t) prev);
+        PUT(NEXT_FREE_BLKP(pc_block), (uint64_t) next);
+        if (next != NULL)
+            PUT(PREV_FREE_BLKP(next), (uint64_t) pc_block);
+    } else {
+        // unset alloc bit
+        PUT(HDRP(bp), PACK(size,0));
+        PUT(FTRP(bp), PACK(size,0));
+
+        insert_free(bp);
+    }
 }
 
 
