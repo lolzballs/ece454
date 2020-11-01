@@ -59,11 +59,11 @@ team_t team = {
 
 /* Given block ptr bp, compute address of its header and footer */
 #define HDRP(bp)        ((char *)(bp) - WSIZE)
-#define FTRP(bp)        ((char *)(bp) + GET_SIZE(HDRP(bp)) - DSIZE)
+#define FTRP(bp)        ((char *)(bp) + GET_SIZE(HDRP(bp)))
 
-/* Given block ptr bp, compute address of next and previous blocks */
-#define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE(((char *)(bp) - WSIZE)))
-#define PREV_BLKP(bp) ((char *)(bp) - GET_SIZE(((char *)(bp) - DSIZE)))
+/* Given block ptr bp, compute address of the adjacent (in memory) blocks */
+#define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE((char *)(bp) - WSIZE) + 2 * WSIZE)
+#define PREV_BLKP(bp) ((char *)(bp) - GET_SIZE((char *)(bp) - DSIZE))
 
 // Given free block ptr bp, get next and prev ptr address
 #define NEXT_FREE_BLKP(bp) ((uint8_t*) (bp))
@@ -84,6 +84,8 @@ uint8_t *heap_top;
      PUT(heap_top + (1 * WSIZE), PACK(0, 1));   // prologue header
      PUT(heap_top + (2 * WSIZE), PACK(0, 1));   // prologue footer
      PUT(heap_top + (3 * WSIZE), PACK(0, 1));    // epilogue header
+
+     heap_list = NULL;
 
      return 0;
  }
@@ -142,25 +144,27 @@ uint8_t *extend_heap(uint64_t words) {
     if (block == (uint8_t*) -1)
         return NULL;
 
+    size -= DSIZE; // We don't include footer and epilogue in size
+
     // Assume that if previous block is free, the block before it is not
     // i.e. the original free block was coalesced
-    uint8_t *prev_contig = block - 2 * WSIZE;
+    uint8_t *pc_footer = block - 2 * WSIZE;
 
     // check flag from highest addressed block from before sbrk'ing
-    bool coalescable = !GET_ALLOC(prev_contig);
+    bool coalescable = !GET_ALLOC(pc_footer);
 
     if (coalescable) {
-        // TODO: Not validated yet
-        uint64_t pc_size = GET_SIZE(prev_contig);
-        uint64_t comb_size = pc_size + size;
+        uint64_t pc_size = GET_SIZE(pc_footer);
+        uint64_t comb_size = pc_size + size + DSIZE; // DSIZE for the internal footer and header
 
-        block = prev_contig - pc_size;
+        block = pc_footer - pc_size;
 
         // Need to stop the prev free block from pointing to this block
         uint64_t *prev_free = (uint64_t*) GET(PREV_FREE_BLKP(block));
-        if (prev_free != NULL) {
+        if (prev_free != NULL)
             PUT(NEXT_FREE_BLKP(prev_free), (uint64_t) NULL);
-        }
+        else
+            heap_list = NULL;
 
         PUT(HDRP(block), PACK(comb_size, 1)); // block header
         PUT(FTRP(block), PACK(comb_size, 1)); // block footer
@@ -192,7 +196,6 @@ uint8_t *find_fit(uint64_t req_size) {
             return cur;
         }
 
-        // TODO: Not validated yet
         cur = (uint8_t*) GET(NEXT_FREE_BLKP(cur));
     }
 
@@ -218,6 +221,28 @@ void place(uint8_t *bp, uint64_t size) {
         PUT(PREV_FREE_BLKP(next), (uint64_t) prev); // Fix prev pointer of next block
     if (prev != NULL)
         PUT(NEXT_FREE_BLKP(prev), (uint64_t) next); // Fix next pointer of prev block
+    else
+        heap_list = (uint8_t*) next;
+}
+
+void insert_free(uint64_t *free_block) {
+    uint64_t *cur = (uint64_t*) heap_list;
+    uint64_t *prev = NULL;
+
+    while (cur != NULL && cur < free_block) {
+        prev = cur;
+        cur = (uint64_t*) GET(NEXT_FREE_BLKP(cur));
+    }
+
+    // prev -> free_block -> cur
+    if (prev != NULL)
+        PUT(NEXT_FREE_BLKP(prev), (uint64_t) free_block);
+    else
+        heap_list = (uint8_t*) free_block;
+    PUT(PREV_FREE_BLKP(free_block), (uint64_t) prev);
+    PUT(NEXT_FREE_BLKP(free_block), (uint64_t) cur);
+    if (cur != NULL)
+        PUT(PREV_FREE_BLKP(cur), (uint64_t) free_block);
 }
 
 /**********************************************************
@@ -229,9 +254,12 @@ void mm_free(void *bp) {
         return;
     }
 
+    // unset alloc bit
     uint64_t size = GET_SIZE(HDRP(bp));
     PUT(HDRP(bp), PACK(size,0));
     PUT(FTRP(bp), PACK(size,0));
+
+    insert_free(bp);
 
     // TODO: Coalescing
 }
@@ -245,8 +273,7 @@ void mm_free(void *bp) {
  *   in place(..)
  * If no block satisfies the request, the heap is extended
  **********************************************************/
-void *mm_malloc(size_t req_size)
-{
+void *mm_malloc(size_t req_size) {
     uint64_t adj_size; /* adjusted block size */
     uint64_t ext_size; /* amount to extend heap if no fit */
     uint8_t *block;
