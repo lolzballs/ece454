@@ -138,6 +138,7 @@ void *coalesce(void *bp)
  * and reallocate its new header
  **********************************************************/
 uint8_t *extend_heap(uint64_t words) {
+    // TODO: Integrate coalescing into the original thing
     /* Allocate an even number of words to maintain alignments */
     uint64_t size = (words % 2) ? (words+1) * WSIZE : words * WSIZE;
     uint8_t *block = mem_sbrk(size);
@@ -254,6 +255,8 @@ void mm_free(void *bp) {
         return;
     }
 
+    assert(mm_check());
+
     // unset alloc bit
     uint64_t size = GET_SIZE(HDRP(bp));
     PUT(HDRP(bp), PACK(size,0));
@@ -339,6 +342,20 @@ void *mm_realloc(void *ptr, size_t size)
  * Check the consistency of the memory heap
  * Return nonzero if the heap is consistant.
  *********************************************************/
-int mm_check(void){
-  return 1;
+int mm_check(void) {
+    // Check if free list is in ascending order
+    uint64_t *cur = (uint64_t*) heap_list;
+    uint64_t *prev = NULL;
+    while (cur != NULL) {
+        if (prev > cur) // Assert address sorted free list
+            return 0;
+
+        if (prev != (uint64_t*) GET(PREV_FREE_BLKP(cur))) // prev pointer should be prev
+            return 0;
+
+        prev = cur;
+        cur = (uint64_t*) GET(NEXT_FREE_BLKP(cur));
+    }
+
+    return 1;
 }
