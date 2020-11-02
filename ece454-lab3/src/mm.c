@@ -124,8 +124,23 @@ void split_alloc(uint64_t *block_a, uint64_t size_a) {
  * requirements of course. Free the former epilogue block
  * and reallocate its new header
  **********************************************************/
-uint8_t *extend_heap(uint64_t words) {
-    // TODO: Integrate coalescing into the original thing
+uint8_t *extend_heap(uint64_t req_size) {
+    uint8_t *pc_footer = mem_heap_hi() + 1 - 2 * WSIZE;
+
+    // Assume that if previous block is free, the block before it is not
+    // i.e. the original free block was coalesced
+    bool coalescable = !GET_ALLOC(pc_footer);
+    uint64_t pc_size = GET_SIZE(pc_footer);
+
+    uint64_t words;
+    if (!coalescable) {
+        uint64_t ext_size = MAX(req_size, CHUNKSIZE);
+        words = ext_size / WSIZE;
+    } else {
+        uint64_t ext_size = MAX(req_size - pc_size - DSIZE, CHUNKSIZE);
+        words = ext_size / WSIZE;
+    }
+
     /* Allocate an even number of words to maintain alignments */
     uint64_t size = (words % 2) ? (words+1) * WSIZE : words * WSIZE;
     uint8_t *block = mem_sbrk(size);
@@ -134,15 +149,7 @@ uint8_t *extend_heap(uint64_t words) {
 
     size -= DSIZE; // We don't include footer and epilogue in size
 
-    // Assume that if previous block is free, the block before it is not
-    // i.e. the original free block was coalesced
-    uint8_t *pc_footer = block - 2 * WSIZE;
-
-    // check flag from highest addressed block from before sbrk'ing
-    bool coalescable = !GET_ALLOC(pc_footer);
-
     if (coalescable) {
-        uint64_t pc_size = GET_SIZE(pc_footer);
         uint64_t comb_size = pc_size + size + DSIZE; // DSIZE for the internal footer and header
 
         block = pc_footer - pc_size;
@@ -334,7 +341,6 @@ void mm_free(void *bp) {
  **********************************************************/
 void *mm_malloc(size_t req_size) {
     uint64_t adj_size; /* adjusted block size */
-    uint64_t ext_size; /* amount to extend heap if no fit */
     uint8_t *block;
 
     /* Ignore spurious requests */
@@ -354,8 +360,7 @@ void *mm_malloc(size_t req_size) {
     }
 
     /* No fit found. Get more memory and place the block */
-    ext_size = MAX(adj_size, CHUNKSIZE);
-    if ((block = extend_heap(ext_size/WSIZE)) == NULL)
+    if ((block = extend_heap(adj_size)) == NULL)
         return NULL;
 
     return block;
