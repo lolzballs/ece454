@@ -42,7 +42,7 @@ team_t team = {
 *************************************************************************/
 #define WSIZE       sizeof(void *)            /* word size (bytes) */
 #define DSIZE       (2 * WSIZE)            /* doubleword size (bytes) */
-#define CHUNKSIZE   (1<<7)      /* initial heap size (bytes) */
+#define MINBLOCKSIZE   (4 * WSIZE)      /* header, next ptr, prev ptr, footer */
 
 #define MAX(x,y) ((x) > (y)?(x) :(y))
 
@@ -68,7 +68,6 @@ team_t team = {
 // Given free block ptr bp, get next and prev ptr address
 #define NEXT_FREE_BLKP(bp) ((uint8_t*) (bp))
 #define PREV_FREE_BLKP(bp) ((uint8_t*) (bp) + WSIZE)
-
 
 uint8_t *heap_list; // free list root
 
@@ -136,10 +135,10 @@ uint8_t *extend_heap(uint64_t req_size) {
 
     uint64_t words;
     if (!coalescable) {
-        uint64_t ext_size = MAX(req_size, CHUNKSIZE);
+        uint64_t ext_size = MAX(req_size, MINBLOCKSIZE);
         words = ext_size / WSIZE;
     } else {
-        uint64_t ext_size = MAX(req_size - pc_size - DSIZE, CHUNKSIZE);
+        uint64_t ext_size = MAX(req_size - pc_size - DSIZE, MINBLOCKSIZE);
         words = ext_size / WSIZE;
     }
 
@@ -206,7 +205,7 @@ uint8_t *find_fit(uint64_t req_size) {
 void place(uint8_t *bp, uint64_t size) {
     /* Get the current block size */
     uint64_t bsize = GET_SIZE(HDRP(bp));
-    if (bsize - size > CHUNKSIZE) {
+    if (bsize - size > MINBLOCKSIZE) {
         split_alloc((uint64_t*) bp, size);
         return;
     }
@@ -410,9 +409,6 @@ int mm_check(void) {
     uint64_t *cur = (uint64_t*) heap_list;
     uint64_t *prev = NULL;
     while (cur != NULL) {
-        if (prev > cur) // Assert address sorted free list
-            return 0;
-
         if (prev != (uint64_t*) GET(PREV_FREE_BLKP(cur))) // prev pointer should be prev
             return 0;
 
