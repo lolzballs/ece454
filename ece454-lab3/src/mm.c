@@ -69,8 +69,8 @@ team_t team = {
 #define NEXT_FREE_BLKP(bp) ((uint8_t*) (bp))
 #define PREV_FREE_BLKP(bp) ((uint8_t*) (bp) + WSIZE)
 
+
 uint8_t *heap_list; // free list root
-uint8_t *heap_top;
 
 /**********************************************************
  * mm_init
@@ -78,12 +78,14 @@ uint8_t *heap_top;
  * prologue and epilogue
  **********************************************************/
  int mm_init(void) {
+     uint64_t *heap_top;
      if ((heap_top = mem_sbrk(4*WSIZE)) == (void *)-1)
          return -1;
+
      PUT(heap_top, 0);                         // alignment padding
-     PUT(heap_top + (1 * WSIZE), PACK(0, 1));   // prologue header
-     PUT(heap_top + (2 * WSIZE), PACK(0, 1));   // prologue footer
-     PUT(heap_top + (3 * WSIZE), PACK(0, 1));    // epilogue header
+     PUT(heap_top + 1, PACK(0, 1));   // prologue header
+     PUT(heap_top + 2, PACK(0, 1));   // prologue footer
+     PUT(heap_top + 3, PACK(0, 1));    // epilogue header
 
      heap_list = NULL;
 
