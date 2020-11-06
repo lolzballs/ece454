@@ -199,12 +199,15 @@ uint64_t *extend_heap(uint64_t req_size) {
 
         block = pc_footer - pc_size;
 
-        // Need to stop the prev free block from pointing to this block
+        // Remove this block from the free list
         uint64_t *prev_free = (uint64_t*) GET(PREV_FREE_BLKP(block));
+        uint64_t *next_free = (uint64_t*) GET(NEXT_FREE_BLKP(block));
         if (prev_free != NULL)
-            PUT(NEXT_FREE_BLKP(prev_free), (uint64_t) NULL);
+            PUT(NEXT_FREE_BLKP(prev_free), (uint64_t) next_free);
         else
-            segroots[seglist_idx(pc_size)] = NULL;
+            segroots[seglist_idx(pc_size)] = next_free;
+        if (next_free != NULL)
+            PUT(PREV_FREE_BLKP(next_free), (uint64_t) prev_free);
 
         PUT(HDRP(block), PACK(comb_size, 1)); // block header
         PUT(FTRP(block), PACK(comb_size, 1)); // block footer
@@ -272,22 +275,12 @@ void place(uint64_t *bp, uint64_t size) {
 
 void insert_free(uint64_t *free_block, uint64_t **list_root) {
     uint64_t *cur = *list_root;
-    uint64_t *prev = NULL;
+    *list_root = free_block;
 
-    while (cur != NULL && cur < free_block) {
-        prev = cur;
-        cur = (uint64_t*) GET(NEXT_FREE_BLKP(cur));
-    }
-
-    // prev -> free_block -> cur
-    if (prev != NULL)
-        PUT(NEXT_FREE_BLKP(prev), (uint64_t) free_block);
-    else
-        *list_root = free_block;
-    PUT(PREV_FREE_BLKP(free_block), (uint64_t) prev);
-    PUT(NEXT_FREE_BLKP(free_block), (uint64_t) cur);
+    PUT(NEXT_FREE_BLKP(free_block), cur);
+    PUT(PREV_FREE_BLKP(free_block), NULL);
     if (cur != NULL)
-        PUT(PREV_FREE_BLKP(cur), (uint64_t) free_block);
+        PUT(PREV_FREE_BLKP(cur), free_block);
 }
 
 /**********************************************************
