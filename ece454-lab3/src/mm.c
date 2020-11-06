@@ -86,7 +86,7 @@ team_t team = {
 
 uint64_t *segroots[13];
 
-static int seglist_idx(uint64_t size) {
+inline static int seglist_idx(uint64_t size) {
     if (size < SEGLIST0_SIZE)
         return 0;
     if (size < SEGLIST1_SIZE)
