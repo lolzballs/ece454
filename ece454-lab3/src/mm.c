@@ -142,8 +142,19 @@ void split_alloc(uint64_t *block_a, uint64_t size_a) {
     uint64_t comb_size = GET_SIZE(HDRP(block_a));
     uint64_t size_b = comb_size - size_a - DSIZE;
 
-    uint64_t *next = (uint64_t*) GET(NEXT_FREE_BLKP(block_a));
-    uint64_t *prev = (uint64_t*) GET(PREV_FREE_BLKP(block_a));
+    bool allocated = GET_ALLOC(HDRP(block_a));
+    if (!allocated) {
+        uint64_t *next = (uint64_t*) GET(NEXT_FREE_BLKP(block_a));
+        uint64_t *prev = (uint64_t*) GET(PREV_FREE_BLKP(block_a));
+
+        // remove block_a from list
+        if (prev != NULL)
+            PUT(NEXT_FREE_BLKP(prev), (uint64_t) next);
+        else
+            segroots[seglist_idx(comb_size)] = next;
+        if (next != NULL)
+            PUT(PREV_FREE_BLKP(next), (uint64_t) prev);
+    }
 
     PUT(HDRP(block_a), PACK(size_a, 1));
     PUT(FTRP(block_a), PACK(size_a, 1));
@@ -152,13 +163,6 @@ void split_alloc(uint64_t *block_a, uint64_t size_a) {
     PUT(HDRP(block_b), PACK(size_b, 0));
     PUT(FTRP(block_b), PACK(size_b, 0));
 
-    // remove block_a from list
-    if (prev != NULL)
-        PUT(NEXT_FREE_BLKP(prev), (uint64_t) next);
-    else
-        segroots[seglist_idx(comb_size)] = next;
-    if (next != NULL)
-        PUT(PREV_FREE_BLKP(next), (uint64_t) prev);
 
     insert_free(block_b, &segroots[seglist_idx(size_b)]);
 }
@@ -273,7 +277,7 @@ void place(uint64_t *bp, uint64_t size) {
         segroots[seglist_idx(bsize)] = next;
 }
 
-void insert_free(uint64_t *free_block, uint64_t **list_root) {
+inline void insert_free(uint64_t *free_block, uint64_t **list_root) {
     uint64_t *cur = *list_root;
     *list_root = free_block;
 
@@ -424,28 +428,71 @@ void *mm_malloc(size_t req_size) {
 void *mm_realloc(void *ptr, size_t size)
 {
     /* If size == 0 then this is just free, and we return NULL. */
-    if(size == 0){
-      mm_free(ptr);
-      return NULL;
+    if (size == 0) {
+        mm_free(ptr);
+        return NULL;
     }
     /* If oldptr is NULL, then this is just malloc. */
     if (ptr == NULL)
-      return (mm_malloc(size));
+        return (mm_malloc(size));
 
-    void *oldptr = ptr;
-    void *newptr;
-    size_t copySize;
+    // Align sizes
+    if (size <= DSIZE)
+        size = 2 * DSIZE;
+    else
+        size = DSIZE * ((size + (DSIZE) + (DSIZE-1))/ DSIZE);
 
-    newptr = mm_malloc(size);
-    if (newptr == NULL)
-      return NULL;
+    uint64_t cur_size = GET_SIZE(HDRP(ptr));
 
-    /* Copy the old data. */
-    copySize = GET_SIZE(HDRP(oldptr));
-    if (size < copySize)
-      copySize = size;
-    memcpy(newptr, oldptr, copySize);
-    mm_free(oldptr);
+    // If size is equal we just return
+    if (size + 2 * DSIZE == cur_size)
+        return ptr;
+
+    // If size is smaller we just use split_alloc
+    if (size + 2 * DSIZE < cur_size) {
+        split_alloc(ptr, size);
+        return ptr;
+    }
+
+    // Here, size > cur_size
+    
+    // Check if the adjacent block is free and large enough
+    uint64_t *adj_block = ptr + cur_size + DSIZE;
+    bool adj_free = !GET_ALLOC(HDRP(adj_block));
+    int64_t adj_size = GET_SIZE(HDRP(adj_block));
+    int64_t comb_size = cur_size + DSIZE + adj_size;
+    int64_t remaining = comb_size + DSIZE - size;
+    if (adj_free && remaining > 0) {
+        uint64_t *prev_free = (uint64_t*) GET(PREV_FREE_BLKP(adj_block));
+        uint64_t *next_free = (uint64_t*) GET(NEXT_FREE_BLKP(adj_block));
+
+        // remove adj_block from free list
+        if (prev_free != NULL)
+            PUT(NEXT_FREE_BLKP(prev_free), (uint64_t) next_free);
+        else
+            segroots[seglist_idx(adj_size)] = next_free;
+        if (next_free != NULL)
+            PUT(PREV_FREE_BLKP(next_free), (uint64_t) prev_free);
+
+        if (remaining >= MINBLOCKSIZE) {
+            // we can split since there's enough free space left over
+            PUT(HDRP(ptr), PACK(comb_size, 1));
+            PUT(FTRP(ptr), PACK(comb_size, 1));
+
+            split_alloc(ptr, size);
+            return ptr;
+        }
+        
+        // we can't split so just allocate the entire thing
+        PUT(HDRP(ptr), PACK(comb_size, 1));
+        PUT(FTRP(ptr), PACK(comb_size, 1));
+        return ptr;
+    }
+
+    // Then we resort to malloc and freeing
+    uint8_t *newptr = mm_malloc(size);
+    memcpy(newptr, ptr, size);
+    mm_free(ptr);
     return newptr;
 }
 
