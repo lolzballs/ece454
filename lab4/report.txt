@@ -1,0 +1,32 @@
+Q1.
+Make sure they aren't doing things.
+
+Q2.
+Both methods were simple but the transactional method version was only 1 line (+ curly brackets)
+rather than 3 (declaration of mutex, lock, unlock).
+
+Q3.
+- since not all hash table implementations use a list for each key (might use open addressing),
+the list-level locking is implementation specific
+- the mutexes need to be associated with these implementation specific lists, so they should belong in the hash class
+
+Q4.
+- the lists are owned by the hash table and we need to lock and unlock a mutex for each
+- we can't just lock and unlock it inside the lookup and insert functions because the critical
+section extends past that (i.e. we modify count and insert after lookup).
+
+Q5.
+- a lookup and insert function won't satisfy our needs since we need to update the sample after lookup
+
+Q6. 
+- yes this works.
+- we lock the list corresponding to the key, do our business and then unlock it
+- "our business" is getting the sample (lookup) and incrementing the value, or inserting a new sample
+
+Q7.
+- the code for using this method was itself simple but there was much more to consider
+- with TM we just slapped the transaction_atomic block around the critical section
+
+Q8.
+- pros: easier to code, less to think about with less race conditions
+- cons: need to figure out how to best split the work, increased memory usage, and reduction work is serialized

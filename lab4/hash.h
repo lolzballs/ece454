@@ -13,10 +13,8 @@ template<class Ele, class Keytype> class hash;
 template<class Ele, class Keytype> class hash {
  private:
   unsigned my_size_log;
-  unsigned my_size;
   unsigned my_size_mask;
   list<Ele,Keytype> *entries;
-  list<Ele,Keytype> *get_list(unsigned the_idx);
 
 #ifdef LIST_LOCKING
   pthread_mutex_t *list_mutexes;
@@ -27,6 +25,9 @@ template<class Ele, class Keytype> class hash {
   void lock_list(Keytype key);
   void unlock_list(Keytype key);
 #endif
+
+  unsigned my_size;
+  list<Ele,Keytype> *get_list(unsigned the_idx);
 
   void setup(unsigned the_size_log=5);
   void insert(Ele *e);
@@ -110,7 +111,6 @@ hash<Ele,Keytype>::reset(){
 template<class Ele, class Keytype> 
 void 
 hash<Ele,Keytype>::cleanup(){
-  unsigned i;
   reset();
   delete [] entries;
 #ifdef LIST_LOCKING
