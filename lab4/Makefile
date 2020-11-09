@@ -16,7 +16,7 @@ randtrack_list_lock: list.h hash.h defs.h randtrack_list_lock.cc
 	$(CC) $(CFLAGS) -pthread -DLIST_LOCKING randtrack_list_lock.cc -o randtrack_list_lock
 
 randtrack_element_lock: list.h hash.h defs.h randtrack_element_lock.cc
-	$(CC) $(CFLAGS) -pthread -DELEMENT_LOCKING randtrack_element_lock.cc -o randtrack_element_lock
+	$(CC) $(CFLAGS) -pthread -DLIST_LOCKING randtrack_element_lock.cc -o randtrack_element_lock
 
 clean:
 	rm -f *.o randtrack randtrack_global_lock randtrack_tm randtrack_list_lock randtrack_element_lock

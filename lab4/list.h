@@ -2,6 +2,7 @@
 #ifndef LIST_H
 #define LIST_H
 
+#include <pthread.h>
 #include <stdio.h>
 
 template<class Ele, class Keytype> class list;

@@ -17,9 +17,17 @@ template<class Ele, class Keytype> class hash {
   unsigned my_size_mask;
   list<Ele,Keytype> *entries;
   list<Ele,Keytype> *get_list(unsigned the_idx);
+
+#ifdef LIST_LOCKING
   pthread_mutex_t *list_mutexes;
+#endif
 
  public:
+#ifdef LIST_LOCKING
+  void lock_list(Keytype key);
+  void unlock_list(Keytype key);
+#endif
+
   void setup(unsigned the_size_log=5);
   void insert(Ele *e);
   Ele *lookup(Keytype the_key);
@@ -35,12 +43,31 @@ hash<Ele,Keytype>::setup(unsigned the_size_log){
   my_size = 1 << my_size_log;
   my_size_mask = (1 << my_size_log) - 1;
   entries = new list<Ele,Keytype>[my_size];
+
+#ifdef LIST_LOCKING
   list_mutexes = new pthread_mutex_t[my_size];
 
   for (int i = 0; i < my_size; i++) {
       list_mutexes[i] = PTHREAD_MUTEX_INITIALIZER;
   }
+#endif
 }
+
+#ifdef LIST_LOCKING
+template<class Ele, class Keytype> 
+void 
+hash<Ele,Keytype>::lock_list(Keytype key){
+  unsigned idx = HASH_INDEX(key,my_size_mask);
+  pthread_mutex_lock(&list_mutexes[idx]);
+}
+
+template<class Ele, class Keytype> 
+void 
+hash<Ele,Keytype>::unlock_list(Keytype key){
+  unsigned idx = HASH_INDEX(key,my_size_mask);
+  pthread_mutex_unlock(&list_mutexes[idx]);
+}
+#endif
 
 template<class Ele, class Keytype> 
 list<Ele,Keytype> *
@@ -86,7 +113,9 @@ hash<Ele,Keytype>::cleanup(){
   unsigned i;
   reset();
   delete [] entries;
+#ifdef LIST_LOCKING
   delete [] list_mutexes;
+#endif
 }
 
 template<class Ele, class Keytype> 
