@@ -38,6 +38,11 @@ class sample {
     void print(FILE *f){printf("%d %d\n",my_key,count);}
 };
 
+struct thread_args {
+    unsigned rnum_start;
+    unsigned rnum_end;
+};
+
 // This instantiates an empty hash table
 // it is a C++ template, which means we define the types for
 // the element and key value here: element is "class sample" and
@@ -46,32 +51,34 @@ hash<sample,unsigned> h;
 pthread_mutex_t global_lock = PTHREAD_MUTEX_INITIALIZER;
 
 void *stream_seed(void *arg) {
-    uint32_t rnum = (uint64_t) arg & 0xFFFFFFFF;
-    uint32_t samples_to_skip = (uint64_t) arg >> 32;
-    sample *s;
+    thread_args *args = (thread_args*) arg;
+    for (int i = args->rnum_start; i < args->rnum_end; i++) {
+        unsigned rnum = i;
 
-    // collect a number of samples
-    for (int j = 0; j < SAMPLES_TO_COLLECT; j++){
+        sample *s;
+        // collect a number of samples
+        for (int j = 0; j < SAMPLES_TO_COLLECT; j++){
 
-        // skip a number of samples
-        for (int k = 0; k < samples_to_skip; k++){
-            rnum = rand_r((unsigned int*)&rnum);
+            // skip a number of samples
+            for (int k = 0; k < samples_to_skip; k++){
+                rnum = rand_r((unsigned int*)&rnum);
+            }
+
+            // force the sample to be within the range of 0..RAND_NUM_UPPER_BOUND-1
+            unsigned key = rnum % RAND_NUM_UPPER_BOUND;
+
+            pthread_mutex_lock(&global_lock);
+            // if this sample has not been counted before
+            if (!(s = h.lookup(key))){
+                // insert a new element for it into the hash table
+                s = new sample(key);
+                h.insert(s);
+            }
+
+            // increment the count for the sample
+            s->count++;
+            pthread_mutex_unlock(&global_lock);
         }
-
-        // force the sample to be within the range of 0..RAND_NUM_UPPER_BOUND-1
-        unsigned key = rnum % RAND_NUM_UPPER_BOUND;
-
-        pthread_mutex_lock(&global_lock);
-        // if this sample has not been counted before
-        if (!(s = h.lookup(key))){
-            // insert a new element for it into the hash table
-            s = new sample(key);
-            h.insert(s);
-        }
-
-        // increment the count for the sample
-        s->count++;
-        pthread_mutex_unlock(&global_lock);
     }
 
     return 0;
@@ -100,23 +107,19 @@ int main (int argc, char* argv[]){
     sscanf(argv[2], " %d", &samples_to_skip);
 
     pthread_t threads[4];
+    thread_args args[4];
 
     // initialize a 16K-entry (2**14) hash of empty lists
     h.setup(14);
 
     // process streams starting with different initial numbers
-    while(i < NUM_SEED_STREAMS) {
-        j = 0;
-        while (j < num_threads && i < NUM_SEED_STREAMS) {
-            uint64_t arg = ((uint64_t) samples_to_skip << 32) | i;
-            pthread_create(&threads[j], NULL, stream_seed, (void*) arg);
-            i++;
-            j++;
-        }
-
-        for (k = 0; k < j; k++) {
-            pthread_join(threads[k], NULL);
-        }
+    for (int i = 0; i < num_threads; i++) {
+        args[i].rnum_start = NUM_SEED_STREAMS / num_threads * i;
+        args[i].rnum_end = NUM_SEED_STREAMS / num_threads * (i+1);
+        pthread_create(&threads[i], NULL, stream_seed, (void*) &args[i]);
+    }
+    for (int i = 0; i < num_threads; i++) {
+        pthread_join(threads[i], NULL);
     }
 
     // print a list of the frequency of all samples
