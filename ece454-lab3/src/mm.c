@@ -19,6 +19,8 @@
 #include "mm.h"
 #include "memlib.h"
 
+void insert_free(uint64_t *free_block, uint64_t **list_root);
+
 /*********************************************************
  * NOTE TO STUDENTS: Before you do anything else, please
  * provide your team information in the following struct.
@@ -69,7 +71,48 @@ team_t team = {
 #define NEXT_FREE_BLKP(bp) ((uint8_t*) (bp))
 #define PREV_FREE_BLKP(bp) ((uint8_t*) (bp) + WSIZE)
 
-uint8_t *heap_list; // free list root
+#define SEGLIST0_SIZE 32 // MINBLOCKSIZE
+#define SEGLIST1_SIZE 36
+#define SEGLIST2_SIZE 40
+#define SEGLIST3_SIZE 48
+#define SEGLIST4_SIZE 64
+#define SEGLIST5_SIZE 96
+#define SEGLIST6_SIZE 128
+#define SEGLIST7_SIZE 256
+#define SEGLIST8_SIZE 512
+#define SEGLIST9_SIZE 1024
+#define SEGLIST10_SIZE 2048
+#define SEGLIST11_SIZE 4096
+
+uint64_t *segroots[13];
+
+inline static int seglist_idx(uint64_t size) {
+    if (size < SEGLIST0_SIZE)
+        return 0;
+    if (size < SEGLIST1_SIZE)
+        return 1;
+    if (size < SEGLIST2_SIZE)
+        return 2;
+    if (size < SEGLIST3_SIZE)
+        return 3;
+    if (size < SEGLIST4_SIZE)
+        return 4;
+    if (size < SEGLIST5_SIZE)
+        return 5;
+    if (size < SEGLIST6_SIZE)
+        return 6;
+    if (size < SEGLIST7_SIZE)
+        return 7;
+    if (size < SEGLIST8_SIZE)
+        return 8;
+    if (size < SEGLIST9_SIZE)
+        return 9;
+    if (size < SEGLIST10_SIZE)
+        return 10;
+    if (size < SEGLIST11_SIZE)
+        return 11;
+    return 12;
+}
 
 /**********************************************************
  * mm_init
@@ -86,7 +129,9 @@ uint8_t *heap_list; // free list root
      PUT(heap_top + 2, PACK(0, 1));   // prologue footer
      PUT(heap_top + 3, PACK(0, 1));    // epilogue header
 
-     heap_list = NULL;
+     for (int i = 0; i < 13; i++) {
+         segroots[i] = NULL;
+     }
 
      return 0;
  }
@@ -97,8 +142,19 @@ void split_alloc(uint64_t *block_a, uint64_t size_a) {
     uint64_t comb_size = GET_SIZE(HDRP(block_a));
     uint64_t size_b = comb_size - size_a - DSIZE;
 
-    uint64_t *next = (uint64_t*) GET(NEXT_FREE_BLKP(block_a));
-    uint64_t *prev = (uint64_t*) GET(PREV_FREE_BLKP(block_a));
+    bool allocated = GET_ALLOC(HDRP(block_a));
+    if (!allocated) {
+        uint64_t *next = (uint64_t*) GET(NEXT_FREE_BLKP(block_a));
+        uint64_t *prev = (uint64_t*) GET(PREV_FREE_BLKP(block_a));
+
+        // remove block_a from list
+        if (prev != NULL)
+            PUT(NEXT_FREE_BLKP(prev), (uint64_t) next);
+        else
+            segroots[seglist_idx(comb_size)] = next;
+        if (next != NULL)
+            PUT(PREV_FREE_BLKP(next), (uint64_t) prev);
+    }
 
     PUT(HDRP(block_a), PACK(size_a, 1));
     PUT(FTRP(block_a), PACK(size_a, 1));
@@ -107,16 +163,8 @@ void split_alloc(uint64_t *block_a, uint64_t size_a) {
     PUT(HDRP(block_b), PACK(size_b, 0));
     PUT(FTRP(block_b), PACK(size_b, 0));
 
-    // orig: prev -> block_a -> next
-    // want: prev -> block_b -> next
-    if (prev != NULL)
-        PUT(NEXT_FREE_BLKP(prev), (uint64_t) block_b);
-    else
-        heap_list = (uint8_t*) block_b;
-    PUT(PREV_FREE_BLKP(block_b), (uint64_t) prev);
-    PUT(NEXT_FREE_BLKP(block_b), (uint64_t) next);
-    if (next != NULL)
-        PUT(PREV_FREE_BLKP(next), (uint64_t) block_b);
+
+    insert_free(block_b, &segroots[seglist_idx(size_b)]);
 }
 
 /**********************************************************
@@ -125,7 +173,7 @@ void split_alloc(uint64_t *block_a, uint64_t size_a) {
  * requirements of course. Free the former epilogue block
  * and reallocate its new header
  **********************************************************/
-uint8_t *extend_heap(uint64_t req_size) {
+uint64_t *extend_heap(uint64_t req_size) {
     uint8_t *pc_footer = mem_heap_hi() + 1 - 2 * WSIZE;
 
     // Assume that if previous block is free, the block before it is not
@@ -144,8 +192,8 @@ uint8_t *extend_heap(uint64_t req_size) {
 
     /* Allocate an even number of words to maintain alignments */
     uint64_t size = (words % 2) ? (words+1) * WSIZE : words * WSIZE;
-    uint8_t *block = mem_sbrk(size);
-    if (block == (uint8_t*) -1)
+    uint64_t *block = mem_sbrk(size);
+    if (block == (uint64_t*) -1)
         return NULL;
 
     size -= DSIZE; // We don't include footer and epilogue in size
@@ -155,12 +203,15 @@ uint8_t *extend_heap(uint64_t req_size) {
 
         block = pc_footer - pc_size;
 
-        // Need to stop the prev free block from pointing to this block
+        // Remove this block from the free list
         uint64_t *prev_free = (uint64_t*) GET(PREV_FREE_BLKP(block));
+        uint64_t *next_free = (uint64_t*) GET(NEXT_FREE_BLKP(block));
         if (prev_free != NULL)
-            PUT(NEXT_FREE_BLKP(prev_free), (uint64_t) NULL);
+            PUT(NEXT_FREE_BLKP(prev_free), (uint64_t) next_free);
         else
-            heap_list = NULL;
+            segroots[seglist_idx(pc_size)] = next_free;
+        if (next_free != NULL)
+            PUT(PREV_FREE_BLKP(next_free), (uint64_t) prev_free);
 
         PUT(HDRP(block), PACK(comb_size, 1)); // block header
         PUT(FTRP(block), PACK(comb_size, 1)); // block footer
@@ -184,15 +235,17 @@ uint8_t *extend_heap(uint64_t req_size) {
  * Return NULL if no free blocks can handle that size
  * Assumed that asize is aligned
  **********************************************************/
-uint8_t *find_fit(uint64_t req_size) {
-    uint8_t *cur = heap_list;
-    while (cur != NULL) {
-        uint64_t size = GET(HDRP(cur)); // GET is equivalent to GET_SIZE since alloc bit is zero
-        if (req_size <= size) {
-            return cur;
-        }
+uint64_t *find_fit(uint64_t req_size) {
+    for (int idx = seglist_idx(req_size); idx < 13; idx++) {
+        uint64_t *cur = segroots[idx];
+        while (cur != NULL) {
+            uint64_t size = GET(HDRP(cur)); // GET is equivalent to GET_SIZE since alloc bit is zero
+            if (req_size <= size) {
+                return cur;
+            }
 
-        cur = (uint8_t*) GET(NEXT_FREE_BLKP(cur));
+            cur = (uint64_t*) GET(NEXT_FREE_BLKP(cur));
+        }
     }
 
     return NULL;
@@ -202,7 +255,7 @@ uint8_t *find_fit(uint64_t req_size) {
  * place
  * Mark the block as allocated
  **********************************************************/
-void place(uint8_t *bp, uint64_t size) {
+void place(uint64_t *bp, uint64_t size) {
     /* Get the current block size */
     uint64_t bsize = GET_SIZE(HDRP(bp));
     if (bsize - size > MINBLOCKSIZE) {
@@ -221,27 +274,17 @@ void place(uint8_t *bp, uint64_t size) {
     if (prev != NULL)
         PUT(NEXT_FREE_BLKP(prev), (uint64_t) next); // Fix next pointer of prev block
     else
-        heap_list = (uint8_t*) next;
+        segroots[seglist_idx(bsize)] = next;
 }
 
-void insert_free(uint64_t *free_block) {
-    uint64_t *cur = (uint64_t*) heap_list;
-    uint64_t *prev = NULL;
+inline void insert_free(uint64_t *free_block, uint64_t **list_root) {
+    uint64_t *cur = *list_root;
+    *list_root = free_block;
 
-    while (cur != NULL && cur < free_block) {
-        prev = cur;
-        cur = (uint64_t*) GET(NEXT_FREE_BLKP(cur));
-    }
-
-    // prev -> free_block -> cur
-    if (prev != NULL)
-        PUT(NEXT_FREE_BLKP(prev), (uint64_t) free_block);
-    else
-        heap_list = (uint8_t*) free_block;
-    PUT(PREV_FREE_BLKP(free_block), (uint64_t) prev);
-    PUT(NEXT_FREE_BLKP(free_block), (uint64_t) cur);
+    PUT(NEXT_FREE_BLKP(free_block), cur);
+    PUT(PREV_FREE_BLKP(free_block), NULL);
     if (cur != NULL)
-        PUT(PREV_FREE_BLKP(cur), (uint64_t) free_block);
+        PUT(PREV_FREE_BLKP(cur), free_block);
 }
 
 /**********************************************************
@@ -270,18 +313,29 @@ void mm_free(void *bp) {
         PUT(HDRP(pc_block), PACK(size,0));
         PUT(FTRP(pc_block), PACK(size,0));
 
-        uint64_t *prev = (uint64_t*) GET(PREV_FREE_BLKP(pc_block));
-        uint64_t *next = (uint64_t*) GET(NEXT_FREE_BLKP(nc_block));
-        // orig: prev -> pc -> nc -> next
-        // want: prev -> big -> next
-        if (prev != NULL)
-            PUT(NEXT_FREE_BLKP(prev), (uint64_t) pc_block);
+        uint64_t *pc_prev = (uint64_t*) GET(PREV_FREE_BLKP(pc_block));
+        uint64_t *pc_next = (uint64_t*) GET(NEXT_FREE_BLKP(pc_block));
+
+        // Remove pc from its list
+        if (pc_prev != NULL)
+            PUT(NEXT_FREE_BLKP(pc_prev), (uint64_t) pc_next);
         else
-            heap_list = (uint8_t*) pc_block;
-        PUT(PREV_FREE_BLKP(pc_block), (uint64_t) prev);
-        PUT(NEXT_FREE_BLKP(pc_block), (uint64_t) next);
-        if (next != NULL)
-            PUT(PREV_FREE_BLKP(next), (uint64_t) pc_block);
+            segroots[seglist_idx(pc_size)] = pc_next;
+        if (pc_next != NULL)
+            PUT(PREV_FREE_BLKP(pc_next), (uint64_t) pc_prev);
+
+        uint64_t *nc_prev = (uint64_t*) GET(PREV_FREE_BLKP(nc_block));
+        uint64_t *nc_next = (uint64_t*) GET(NEXT_FREE_BLKP(nc_block));
+
+        // Remove nc from its list
+        if (nc_prev != NULL)
+            PUT(NEXT_FREE_BLKP(nc_prev), (uint64_t) nc_next);
+        else
+            segroots[seglist_idx(nc_size)] = nc_next;
+        if (nc_next != NULL)
+            PUT(PREV_FREE_BLKP(nc_next), (uint64_t) nc_prev);
+
+        insert_free(pc_block, &segroots[seglist_idx(size)]);
     } else if (coalesce_next) {
         uint64_t nc_size = GET_SIZE(HDRP(nc_block));
         size += nc_size + DSIZE;
@@ -290,18 +344,18 @@ void mm_free(void *bp) {
         PUT(HDRP(bp), PACK(size,0));
         PUT(FTRP(bp), PACK(size,0));
 
-        uint64_t *prev = (uint64_t*) GET(PREV_FREE_BLKP(nc_block));
-        uint64_t *next = (uint64_t*) GET(NEXT_FREE_BLKP(nc_block));
-        // orig: prev -> nc -> next
-        // want: pc -> big -> next
-        if (prev != NULL)
-            PUT(NEXT_FREE_BLKP(prev), (uint64_t) bp);
+        uint64_t *nc_prev = (uint64_t*) GET(PREV_FREE_BLKP(nc_block));
+        uint64_t *nc_next = (uint64_t*) GET(NEXT_FREE_BLKP(nc_block));
+
+        // Remove nc from its list
+        if (nc_prev != NULL)
+            PUT(NEXT_FREE_BLKP(nc_prev), (uint64_t) nc_next);
         else
-            heap_list = (uint8_t*) bp;
-        PUT(PREV_FREE_BLKP(bp), (uint64_t) prev);
-        PUT(NEXT_FREE_BLKP(bp), (uint64_t) next);
-        if (next != NULL)
-            PUT(PREV_FREE_BLKP(next), (uint64_t) bp);
+            segroots[seglist_idx(nc_size)] = nc_next;
+        if (nc_next != NULL)
+            PUT(PREV_FREE_BLKP(nc_next), (uint64_t) nc_prev);
+
+        insert_free(bp, &segroots[seglist_idx(size)]);
     } else if (coalesce_prev) {
         uint64_t pc_size = GET_SIZE(HDRP(pc_block));
         size += pc_size + DSIZE;
@@ -310,24 +364,24 @@ void mm_free(void *bp) {
         PUT(HDRP(pc_block), PACK(size,0));
         PUT(FTRP(pc_block), PACK(size,0));
 
-        uint64_t *prev = (uint64_t*) GET(PREV_FREE_BLKP(pc_block));
-        uint64_t *next = (uint64_t*) GET(NEXT_FREE_BLKP(pc_block));
-        // orig: prev -> pc -> next
-        // want: prev -> big -> next
-        if (prev != NULL)
-            PUT(NEXT_FREE_BLKP(prev), (uint64_t) pc_block);
+        uint64_t *pc_prev = (uint64_t*) GET(PREV_FREE_BLKP(pc_block));
+        uint64_t *pc_next = (uint64_t*) GET(NEXT_FREE_BLKP(pc_block));
+
+        // Remove pc from its list
+        if (pc_prev != NULL)
+            PUT(NEXT_FREE_BLKP(pc_prev), (uint64_t) pc_next);
         else
-            heap_list = (uint8_t*) pc_block;
-        PUT(PREV_FREE_BLKP(pc_block), (uint64_t) prev);
-        PUT(NEXT_FREE_BLKP(pc_block), (uint64_t) next);
-        if (next != NULL)
-            PUT(PREV_FREE_BLKP(next), (uint64_t) pc_block);
+            segroots[seglist_idx(pc_size)] = pc_next;
+        if (pc_next != NULL)
+            PUT(PREV_FREE_BLKP(pc_next), (uint64_t) pc_prev);
+
+        insert_free(pc_block, &segroots[seglist_idx(size)]);
     } else {
         // unset alloc bit
         PUT(HDRP(bp), PACK(size,0));
         PUT(FTRP(bp), PACK(size,0));
 
-        insert_free(bp);
+        insert_free(bp, &segroots[seglist_idx(size)]);
     }
 }
 
@@ -342,7 +396,7 @@ void mm_free(void *bp) {
  **********************************************************/
 void *mm_malloc(size_t req_size) {
     uint64_t adj_size; /* adjusted block size */
-    uint8_t *block;
+    uint64_t *block;
 
     /* Ignore spurious requests */
     if (req_size == 0)
@@ -374,28 +428,71 @@ void *mm_malloc(size_t req_size) {
 void *mm_realloc(void *ptr, size_t size)
 {
     /* If size == 0 then this is just free, and we return NULL. */
-    if(size == 0){
-      mm_free(ptr);
-      return NULL;
+    if (size == 0) {
+        mm_free(ptr);
+        return NULL;
     }
     /* If oldptr is NULL, then this is just malloc. */
     if (ptr == NULL)
-      return (mm_malloc(size));
+        return (mm_malloc(size));
 
-    void *oldptr = ptr;
-    void *newptr;
-    size_t copySize;
+    // Align sizes
+    if (size <= DSIZE)
+        size = 2 * DSIZE;
+    else
+        size = DSIZE * ((size + (DSIZE) + (DSIZE-1))/ DSIZE);
 
-    newptr = mm_malloc(size);
-    if (newptr == NULL)
-      return NULL;
+    uint64_t cur_size = GET_SIZE(HDRP(ptr));
 
-    /* Copy the old data. */
-    copySize = GET_SIZE(HDRP(oldptr));
-    if (size < copySize)
-      copySize = size;
-    memcpy(newptr, oldptr, copySize);
-    mm_free(oldptr);
+    // If size is equal we just return
+    if (size + 2 * DSIZE == cur_size)
+        return ptr;
+
+    // If size is smaller we just use split_alloc
+    if (size + 2 * DSIZE < cur_size) {
+        split_alloc(ptr, size);
+        return ptr;
+    }
+
+    // Here, size > cur_size
+    
+    // Check if the adjacent block is free and large enough
+    uint64_t *adj_block = ptr + cur_size + DSIZE;
+    bool adj_free = !GET_ALLOC(HDRP(adj_block));
+    int64_t adj_size = GET_SIZE(HDRP(adj_block));
+    int64_t comb_size = cur_size + DSIZE + adj_size;
+    int64_t remaining = comb_size + DSIZE - size;
+    if (adj_free && remaining > 0) {
+        uint64_t *prev_free = (uint64_t*) GET(PREV_FREE_BLKP(adj_block));
+        uint64_t *next_free = (uint64_t*) GET(NEXT_FREE_BLKP(adj_block));
+
+        // remove adj_block from free list
+        if (prev_free != NULL)
+            PUT(NEXT_FREE_BLKP(prev_free), (uint64_t) next_free);
+        else
+            segroots[seglist_idx(adj_size)] = next_free;
+        if (next_free != NULL)
+            PUT(PREV_FREE_BLKP(next_free), (uint64_t) prev_free);
+
+        if (remaining >= MINBLOCKSIZE) {
+            // we can split since there's enough free space left over
+            PUT(HDRP(ptr), PACK(comb_size, 1));
+            PUT(FTRP(ptr), PACK(comb_size, 1));
+
+            split_alloc(ptr, size);
+            return ptr;
+        }
+        
+        // we can't split so just allocate the entire thing
+        PUT(HDRP(ptr), PACK(comb_size, 1));
+        PUT(FTRP(ptr), PACK(comb_size, 1));
+        return ptr;
+    }
+
+    // Then we resort to malloc and freeing
+    uint8_t *newptr = mm_malloc(size);
+    memcpy(newptr, ptr, size);
+    mm_free(ptr);
     return newptr;
 }
 
@@ -405,6 +502,7 @@ void *mm_realloc(void *ptr, size_t size)
  * Return nonzero if the heap is consistant.
  *********************************************************/
 int mm_check(void) {
+    /*
     // Check if free list is in ascending order
     uint64_t *cur = (uint64_t*) heap_list;
     uint64_t *prev = NULL;
@@ -415,6 +513,7 @@ int mm_check(void) {
         prev = cur;
         cur = (uint64_t*) GET(NEXT_FREE_BLKP(cur));
     }
+    */
 
-    return 1;
+    return 0;
 }
