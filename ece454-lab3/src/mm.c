@@ -19,8 +19,6 @@
 #include "mm.h"
 #include "memlib.h"
 
-void insert_free(uint64_t *free_block);
-
 /*********************************************************
  * NOTE TO STUDENTS: Before you do anything else, please
  * provide your team information in the following struct.
@@ -110,18 +108,15 @@ void split_alloc(uint64_t *block_a, uint64_t size_a) {
     PUT(FTRP(block_b), PACK(size_b, 0));
 
     // orig: prev -> block_a -> next
-    // want: prev -> next
-    //
-    // orig: NULL -> block_a -> next
-    // want: NULL -> next
+    // want: prev -> block_b -> next
     if (prev != NULL)
-        PUT(NEXT_FREE_BLKP(prev), next);
+        PUT(NEXT_FREE_BLKP(prev), (uint64_t) block_b);
     else
-        heap_list = (uint8_t*) next;
+        heap_list = (uint8_t*) block_b;
+    PUT(PREV_FREE_BLKP(block_b), (uint64_t) prev);
+    PUT(NEXT_FREE_BLKP(block_b), (uint64_t) next);
     if (next != NULL)
-        PUT(PREV_FREE_BLKP(next), prev);
-
-    insert_free(block_b);
+        PUT(PREV_FREE_BLKP(next), (uint64_t) block_b);
 }
 
 /**********************************************************
@@ -219,26 +214,34 @@ void place(uint8_t *bp, uint64_t size) {
     PUT(FTRP(bp), PACK(bsize, 1));
 
     // Remove this block from the free list
-    uint64_t *prev = (uint64_t*) GET(PREV_FREE_BLKP(bp));
     uint64_t *next = (uint64_t*) GET(NEXT_FREE_BLKP(bp));
+    uint64_t *prev = (uint64_t*) GET(PREV_FREE_BLKP(bp));
+    if (next != NULL)
+        PUT(PREV_FREE_BLKP(next), (uint64_t) prev); // Fix prev pointer of next block
     if (prev != NULL)
         PUT(NEXT_FREE_BLKP(prev), (uint64_t) next); // Fix next pointer of prev block
     else
         heap_list = (uint8_t*) next;
-    if (next != NULL)
-        PUT(PREV_FREE_BLKP(next), (uint64_t) prev); // Fix prev pointer of next block
 }
 
 void insert_free(uint64_t *free_block) {
-    // orig: NULL -> cur
-    // want: NULL -> free_block -> cur
     uint64_t *cur = (uint64_t*) heap_list;
-    heap_list = (uint8_t*) free_block;
-    PUT(PREV_FREE_BLKP(free_block), NULL);
-    PUT(NEXT_FREE_BLKP(free_block), cur);
-    if (cur != NULL) {
-        PUT(PREV_FREE_BLKP(cur), free_block);
+    uint64_t *prev = NULL;
+
+    while (cur != NULL && cur < free_block) {
+        prev = cur;
+        cur = (uint64_t*) GET(NEXT_FREE_BLKP(cur));
     }
+
+    // prev -> free_block -> cur
+    if (prev != NULL)
+        PUT(NEXT_FREE_BLKP(prev), (uint64_t) free_block);
+    else
+        heap_list = (uint8_t*) free_block;
+    PUT(PREV_FREE_BLKP(free_block), (uint64_t) prev);
+    PUT(NEXT_FREE_BLKP(free_block), (uint64_t) cur);
+    if (cur != NULL)
+        PUT(PREV_FREE_BLKP(cur), (uint64_t) free_block);
 }
 
 /**********************************************************
@@ -267,30 +270,18 @@ void mm_free(void *bp) {
         PUT(HDRP(pc_block), PACK(size,0));
         PUT(FTRP(pc_block), PACK(size,0));
 
-        uint64_t *prev1 = (uint64_t*) GET(PREV_FREE_BLKP(pc_block));
-        uint64_t *next1 = (uint64_t*) GET(NEXT_FREE_BLKP(pc_block));
-        // orig 1: prev1 -> pc -> next1
-        // want 1: prev1 -> next1
-        if (prev1 != NULL)
-            PUT(NEXT_FREE_BLKP(prev1), next1);
+        uint64_t *prev = (uint64_t*) GET(PREV_FREE_BLKP(pc_block));
+        uint64_t *next = (uint64_t*) GET(NEXT_FREE_BLKP(nc_block));
+        // orig: prev -> pc -> nc -> next
+        // want: prev -> big -> next
+        if (prev != NULL)
+            PUT(NEXT_FREE_BLKP(prev), (uint64_t) pc_block);
         else
-            heap_list = next1;
-        if (next1 != NULL)
-            PUT(PREV_FREE_BLKP(next1), prev1);
-
-        uint64_t *prev2 = (uint64_t*) GET(PREV_FREE_BLKP(nc_block));
-        uint64_t *next2 = (uint64_t*) GET(NEXT_FREE_BLKP(nc_block));
-        // orig 2: prev2 -> nc -> next2
-        // want 2: prev2 -> next2
-        if (prev2 != NULL)
-            PUT(NEXT_FREE_BLKP(prev2), next2);
-        else
-            heap_list = next2;
-        if (next2 != NULL)
-            PUT(PREV_FREE_BLKP(next2), prev2);
-
-        // want: NULL -> (pc bp nc) -> cur
-        insert_free(pc_block);
+            heap_list = (uint8_t*) pc_block;
+        PUT(PREV_FREE_BLKP(pc_block), (uint64_t) prev);
+        PUT(NEXT_FREE_BLKP(pc_block), (uint64_t) next);
+        if (next != NULL)
+            PUT(PREV_FREE_BLKP(next), (uint64_t) pc_block);
     } else if (coalesce_next) {
         uint64_t nc_size = GET_SIZE(HDRP(nc_block));
         size += nc_size + DSIZE;
@@ -302,16 +293,15 @@ void mm_free(void *bp) {
         uint64_t *prev = (uint64_t*) GET(PREV_FREE_BLKP(nc_block));
         uint64_t *next = (uint64_t*) GET(NEXT_FREE_BLKP(nc_block));
         // orig: prev -> nc -> next
-        // want: prev -> next
+        // want: pc -> big -> next
         if (prev != NULL)
-            PUT(NEXT_FREE_BLKP(prev), next);
+            PUT(NEXT_FREE_BLKP(prev), (uint64_t) bp);
         else
-            heap_list = next;
+            heap_list = (uint8_t*) bp;
+        PUT(PREV_FREE_BLKP(bp), (uint64_t) prev);
+        PUT(NEXT_FREE_BLKP(bp), (uint64_t) next);
         if (next != NULL)
-            PUT(PREV_FREE_BLKP(next), prev);
-
-        // want: NULL -> (bp nc) -> cur
-        insert_free(bp);
+            PUT(PREV_FREE_BLKP(next), (uint64_t) bp);
     } else if (coalesce_prev) {
         uint64_t pc_size = GET_SIZE(HDRP(pc_block));
         size += pc_size + DSIZE;
@@ -323,16 +313,15 @@ void mm_free(void *bp) {
         uint64_t *prev = (uint64_t*) GET(PREV_FREE_BLKP(pc_block));
         uint64_t *next = (uint64_t*) GET(NEXT_FREE_BLKP(pc_block));
         // orig: prev -> pc -> next
-        // want: prev -> next
+        // want: prev -> big -> next
         if (prev != NULL)
-            PUT(NEXT_FREE_BLKP(prev), next);
+            PUT(NEXT_FREE_BLKP(prev), (uint64_t) pc_block);
         else
-            heap_list = next;
+            heap_list = (uint8_t*) pc_block;
+        PUT(PREV_FREE_BLKP(pc_block), (uint64_t) prev);
+        PUT(NEXT_FREE_BLKP(pc_block), (uint64_t) next);
         if (next != NULL)
-            PUT(PREV_FREE_BLKP(next), prev);
-
-        // want: NULL -> (pc bp) -> cur
-        insert_free(pc_block);
+            PUT(PREV_FREE_BLKP(next), (uint64_t) pc_block);
     } else {
         // unset alloc bit
         PUT(HDRP(bp), PACK(size,0));
