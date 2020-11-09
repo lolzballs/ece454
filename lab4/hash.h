@@ -2,6 +2,7 @@
 #ifndef HASH_H
 #define HASH_H
 
+#include <pthread.h>
 #include <stdio.h>
 #include "list.h"
 
@@ -16,6 +17,7 @@ template<class Ele, class Keytype> class hash {
   unsigned my_size_mask;
   list<Ele,Keytype> *entries;
   list<Ele,Keytype> *get_list(unsigned the_idx);
+  pthread_mutex_t *list_mutexes;
 
  public:
   void setup(unsigned the_size_log=5);
@@ -33,6 +35,11 @@ hash<Ele,Keytype>::setup(unsigned the_size_log){
   my_size = 1 << my_size_log;
   my_size_mask = (1 << my_size_log) - 1;
   entries = new list<Ele,Keytype>[my_size];
+  list_mutexes = new pthread_mutex_t[my_size];
+
+  for (int i = 0; i < my_size; i++) {
+      list_mutexes[i] = PTHREAD_MUTEX_INITIALIZER;
+  }
 }
 
 template<class Ele, class Keytype> 
@@ -79,6 +86,7 @@ hash<Ele,Keytype>::cleanup(){
   unsigned i;
   reset();
   delete [] entries;
+  delete [] list_mutexes;
 }
 
 template<class Ele, class Keytype> 
