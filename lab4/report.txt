@@ -1,85 +1,74 @@
 Q1.
-Make sure they aren't doing things.
+- #ifdef makes sure the extraneous code isn't compiled in and affecting results
+- being done at compile-time ensures that there are no extra branches at runtime
 
 Q2.
-Both methods were simple but the transactional method version was only 1 line (+ curly brackets)
-rather than 3 (declaration of mutex, lock, unlock).
+Both methods were simple but the transactional method version was only 1 line
+(+ curly brackets) rather than 3 (declaration of mutex, lock, unlock).
 
 Q3.
-- since not all hash table implementations use a list for each key (might use open addressing),
-the list-level locking is implementation specific
-- the mutexes need to be associated with these implementation specific lists, so they should belong in the hash class
+- since not all hash table implementations use a list for each key (might use
+open addressing), the list-level locking is implementation specific
+- the mutexes need to be associated with these implementation specific lists,
+so they should belong in the hash class
 
 Q4.
 - the lists are owned by the hash table and we need to lock and unlock a mutex for each
-- we can't just lock and unlock it inside the lookup and insert functions because the critical
-section extends past that (i.e. we modify count and insert after lookup).
+- we can't just lock and unlock it inside the lookup and insert functions because
+the critical section extends past that (i.e. we modify count and insert after lookup).
 
 Q5.
-- a lookup and insert function won't satisfy our needs since we need to update the sample after lookup
+- a lookup and insert function won't satisfy all our needs since we need to update
+the sample after lookup
 
 Q6. 
 - yes this works.
-- we lock the list corresponding to the key, do our business and then unlock it
-- "our business" is getting the sample (lookup) and incrementing the value, or inserting a new sample
+- the critical section is getting the sample (lookup) and incrementing the value,
+or inserting a new sample
+- we lock the list corresponding to the key, run the critical section and and
+then unlock it
 
 Q7.
 - the code for using this method was itself simple but there was much more to consider
 - with TM we just slapped the transaction_atomic block around the critical section
 
 Q8.
-- pros: easier to code, less to think about with less race conditions
-- cons: need to figure out how to best split the work, increased memory usage, and reduction work is serialized
+pros:
+- easier to code
+- less to think about since each thread works independently 
+cons:
+- need to figure out how to best split the work
+- increased memory usage since we have multiple thread local tables, leading to
+duplicate entries
+- reduction work is serialized
 
-randtrack:
-10.39
-
-randtrack_global_lock 1:
-10.69
-
-randtrack_global_lock 2:
-6.81
-
-randtrack_global_lock 4:
-5.698
-
-randtrack_list_lock 1:
-10.89
-
-randtrack_list_lock 2:
-5.64
-
-randtrack_list_lock 4:
-3.07
-
-randtrack_element_lock 1:
-11.31
-
-randtrack_element_lock 2:
-5.94
-
-randtrack_element_lock 4:
-3.21
-
-randtrack_tm 1:
-13.13
-
-randtrack_tm 2:
-10.54
-
-randtrack_tm 4:
-6.71
-
-randtrack_reduction 1:
-10.39
-
-randtrack_reduction 2:
-5.28
-
-randtrack_reduction 4:
-2.77
+randtrack: 10.39
 
 Q9.
+samples_to_skip=50 results
+==========================
+randtrack_global_lock 1: 10.69
+randtrack_global_lock 2: 6.81
+randtrack_global_lock 4: 5.698
+
+randtrack_list_lock 1: 10.89
+randtrack_list_lock 2: 5.64
+randtrack_list_lock 4: 3.07
+
+randtrack_element_lock 1: 11.31
+randtrack_element_lock 2: 5.94
+randtrack_element_lock 4: 3.21
+
+randtrack_tm 1: 13.13
+randtrack_tm 2: 10.54
+randtrack_tm 4: 6.71
+
+randtrack_reduction 1: 10.39
+randtrack_reduction 2: 5.28
+randtrack_reduction 4: 2.77
+
+samples_to_skip=50 speedup
+==========================
 randtrack: 1
 randtrack_global_lock: 1.03
 randtrack_list_lock: 1.05
@@ -88,62 +77,39 @@ randtrack_tm: 1.26
 randtrack_reduction: 1.00
 
 Q10.
-Each solution got faster with more threads, although the degree to which it got faster varies.
-In all cases the overhead to locking and threading was smaller than the speedup due to parallelism
+- each solution got faster with more threads, although amount of speedup varies
+- implies that the overhead to locking and threading was smaller than the speedup
 
 Q11.
-randtrack:
-20.58
+samples_to_skip=100 results
+===========================
+randtrack: 20.58
 
-randtrack_global_lock 1:
-20.7
+randtrack_global_lock 1: 20.7
+randtrack_global_lock 2: 11.39
+randtrack_global_lock 4: 7.25
 
-randtrack_global_lock 2:
-11.39
+randtrack_tm 1: 23.25
+randtrack_tm 2: 15.51
+randtrack_tm 4: 9.32
 
-randtrack_global_lock 4:
-7.25
+randtrack_list_lock 1: 20.93
+randtrack_list_lock 2: 10.72
+randtrack_list_lock 4: 5.74
 
-randtrack_tm 1:
-23.25
+randtrack_element_lock 1: 21.29
+randtrack_element_lock 2: 10.95
+randtrack_element_lock 4: 5.85
 
-randtrack_tm 2:
-15.51
+randtrack_reduction 1: 20.58
+randtrack_reduction 2: 10.41
+randtrack_reduction 4: 5.46
 
-randtrack_tm 4:
-9.32
-
-randtrack_list_lock 1:
-20.93
-
-randtrack_list_lock 2:
-10.72
-
-randtrack_list_lock 4:
-5.74
-
-randtrack_element_lock 1:
-21.29
-
-randtrack_element_lock 2:
-10.95
-
-randtrack_element_lock 4:
-5.85
-
-randtrack_reduction 1:
-20.58
-
-randtrack_reduction 2:
-10.41
-
-randtrack_reduction 3:
-5.46
-
-The overall runtime gets larger but it scales more than 50 skipped samples. The sample skipping
-portion is not synchronized so its parallelizable. More time spent there originally means more
-scaling.
+- overall runtime is larger but appears to scale more than the case in Q9
+- sample skipping is not synchronized so it can take advantage of parallelism
 
 Q12.
-I would recommend reduction since it scaled the best while not having a noticable overhead on single thread.
-- memory is a concern but OptsRus hasn't given specifications with regards to memory and size of the inputs
+- recommend reduction since it scaled the best while not having a noticable
+overhead on single thread
+- memory is a concern but OptsRus hasn't given specifications with regards to
+memory and size of the inputs
