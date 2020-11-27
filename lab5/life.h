@@ -1,6 +1,19 @@
 #ifndef _life_h
 #define _life_h
 
+#include <pthread.h>
+
+struct life_thread_args {
+    pthread_barrier_t *barrier;
+
+    char *outboard;
+    char *inboard;
+    int size;
+    int gens_max;
+    int row_start;
+    int row_end;
+};
+
 /**
  * Given the initial board state in inboard and the board dimensions
  * nrows by ncols, evolve the board state gens_max times by alternating
@@ -25,6 +38,8 @@ sequential_game_of_life (char* outboard,
 			 const int nrows,
 			 const int ncols,
 			 const int gens_max);
+
+
 
 
 #endif /* _life_h */

@@ -29,7 +29,7 @@ else
 endif
 
 CPPFLAGS += -D$(TIMER_TYPE) 
-CFLAGS = $(COPTFLAGS) 
+CFLAGS = $(COPTFLAGS) -lpthread
 
 DYLIB_SUFFIX=so
 DYLIB_CREATE_FLAG=-shared
