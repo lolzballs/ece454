@@ -109,7 +109,7 @@ life_thread_fn(void *argptr) {
     return inboard;
 }
 
-#define NUM_THREADS 16
+#define NUM_THREADS 32
 
 /*****************************************************************************
  * Game of life implementation
