@@ -82,12 +82,25 @@ life_thread_fn(void *argptr) {
                     BOARD(inboard, i, 0) << 1 |
                     BOARD(inboard, idx_bot_row, 0) << 0;
 
-            for (j = 0; j < size; j++)
+            for (j = 0; j < size-1; j++)
             {
                 neighbours = ((neighbours << 3) & 0x1FF) |
-                    BOARD(inboard, idx_top_row, mod(j+1, size)) << 2 |
-                    BOARD(inboard, i, mod(j+1, size)) << 1 |
-                    BOARD(inboard, idx_bot_row, mod(j+1, size)) << 0;
+                    BOARD(inboard, idx_top_row, j+1) << 2 |
+                    BOARD(inboard, i, j+1) << 1 |
+                    BOARD(inboard, idx_bot_row, j+1) << 0;
+
+#ifdef DEBUG
+                print_neighbours(idx_top_row, idx_bot_row, i, j, neighbours);
+#endif
+
+                BOARD(outboard, i, j) = neighbours_lut[neighbours];
+            }
+
+            {
+                neighbours = ((neighbours << 3) & 0x1FF) |
+                    BOARD(inboard, idx_top_row, 0) << 2 |
+                    BOARD(inboard, i, 0) << 1 |
+                    BOARD(inboard, idx_bot_row, 0) << 0;
 
 #ifdef DEBUG
                 print_neighbours(idx_top_row, idx_bot_row, i, j, neighbours);
