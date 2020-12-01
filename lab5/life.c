@@ -3,10 +3,12 @@
  * Parallelized and optimized implementation of the game of life resides here
  ****************************************************************************/
 #include "life.h"
+#include "neighbours.h"
 #include "util.h"
 
 #include <assert.h>
 #include <pthread.h>
+#include <stdint.h>
 #include <stdio.h>
 
 /*****************************************************************************
@@ -26,11 +28,25 @@
 #define BOARD( __board, __r, __c )  (__board[(__c) + size*(__r)])
 
 static void
-print_window(int r, int c, char *top, char *mid, char *bot) {
+print_neighbours(int top, int bot, int r, int c, uint16_t neighbours) {
+    static pthread_mutex_t stdout_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+    pthread_mutex_lock(&stdout_mutex);
     printf("loc: %d %d\n", r, c);
-    printf("%d %d %d\n", top[0], top[1], top[2]);
-    printf("%d %d %d\n", mid[0], mid[1], mid[2]);
-    printf("%d %d %d\n", bot[0], bot[1], bot[2]);
+    printf("top: %d bot: %d\n", top, bot);
+    printf("%d %d %d\n",
+            (neighbours & (1 << 8)) != 0,
+            (neighbours & (1 << 5)) != 0,
+            (neighbours & (1 << 2)) != 0);
+    printf("%d %d %d\n",
+            (neighbours & (1 << 7)) != 0,
+            (neighbours & (1 << 4)) != 0,
+            (neighbours & (1 << 1)) != 0);
+    printf("%d %d %d\n",
+            (neighbours & (1 << 6)) != 0,
+            (neighbours & (1 << 3)) != 0,
+            (neighbours & (1 << 0)) != 0);
+    pthread_mutex_unlock(&stdout_mutex);
 }
 
 static void
@@ -53,69 +69,32 @@ life_thread_fn(void *argptr) {
     int curgen, i, j;
 
     for (curgen = 0; curgen < gens_max; curgen++) {
-        int idx_top_row = mod(row_start - 1, size);
-        int idx_bot_row = mod(row_start + 1, size);
-        int idx_right_col = 1;
-
-        char top[3] = {
-            BOARD(inboard, idx_top_row, size - 1),
-            BOARD(inboard, idx_top_row, 0),
-            BOARD(inboard, idx_top_row, 1),
-        };
-        char mid[3] = {
-            BOARD(inboard, row_start, size - 1),
-            BOARD(inboard, row_start, 0),
-            BOARD(inboard, row_start, 1),
-        };
-        char bot[3] = {
-            BOARD(inboard, idx_bot_row, size - 1),
-            BOARD(inboard, idx_bot_row, 0),
-            BOARD(inboard, idx_bot_row, 1),
-        };
-
-        /* HINT: you'll be parallelizing these loop(s) by doing a
-           geometric decomposition of the output */
         for (i = row_start; i < row_end; i++)
         {
+            int idx_top_row = mod(i-1, size);
+            int idx_bot_row = mod(i+1, size);
+
+            uint16_t neighbours =
+                    BOARD(inboard, idx_top_row, size - 1) << 5 |
+                    BOARD(inboard, i, size - 1) << 4 |
+                    BOARD(inboard, idx_bot_row, size - 1) << 3 |
+                    BOARD(inboard, idx_top_row, 0) << 2 |
+                    BOARD(inboard, i, 0) << 1 |
+                    BOARD(inboard, idx_bot_row, 0) << 0;
+
             for (j = 0; j < size; j++)
             {
+                neighbours = ((neighbours << 3) & 0x1FF) |
+                    BOARD(inboard, idx_top_row, mod(j+1, size)) << 2 |
+                    BOARD(inboard, i, mod(j+1, size)) << 1 |
+                    BOARD(inboard, idx_bot_row, mod(j+1, size)) << 0;
+
 #ifdef DEBUG
-                printf("top_row: %d, bot_row: %d right_col: %d\n", idx_top_row, idx_bot_row, idx_right_col);
-                print_window(i, j, top, mid, bot);
+                print_neighbours(idx_top_row, idx_bot_row, i, j, neighbours);
 #endif
 
-                const char neighbor_count = 
-                    top[0] + top[1] + top[2] +
-                    mid[0] + mid[2] + 
-                    bot[0] + bot[1] + bot[2];
-
-                BOARD(outboard, i, j) = alivep(neighbor_count, mid[1]);
-
-                idx_right_col = mod(idx_right_col + 1, size);
-
-                top[0] = top[1];
-                top[1] = top[2];
-                top[2] = BOARD(inboard, idx_top_row, idx_right_col);
-                mid[0] = mid[1];
-                mid[1] = mid[2];
-                mid[2] = BOARD(inboard, i, idx_right_col);
-                bot[0] = bot[1];
-                bot[1] = bot[2];
-                bot[2] = BOARD(inboard, idx_bot_row, idx_right_col);
+                BOARD(outboard, i, j) = neighbours_lut[neighbours];
             }
-
-            top[0] = mid[0];
-            top[1] = mid[1];
-            top[2] = BOARD(inboard, i, 1);
-            mid[0] = bot[0];
-            mid[1] = bot[1];
-            mid[2] = BOARD(inboard, idx_bot_row, 1);
-            
-            idx_top_row = i;
-            idx_bot_row = mod(idx_bot_row + 1, size);
-            bot[0] = BOARD(inboard, idx_bot_row, size - 1);
-            bot[1] = BOARD(inboard, idx_bot_row, 0);
-            bot[2] = BOARD(inboard, idx_bot_row, 1);
         }
 
         SWAP_BOARDS(outboard, inboard);
@@ -157,9 +136,6 @@ game_of_life (char* outboard,
         args[i].row_start = (nrows) / NUM_THREADS * i;
         args[i].row_end = (nrows) / NUM_THREADS * (i + 1);
 
-#ifdef DEBUG
-        print_args(&args[i]);
-#endif
         pthread_create(&threads[i], NULL, life_thread_fn, &(args[i]));
     }
 
